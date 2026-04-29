@@ -1,0 +1,49 @@
+# Environment
+environment:
+ run_env: True
+ name: "pendulum"
+ gravity: 9.81
+ pen_mass: 1.0
+ pen_length: 1.0
+ dt: 0.01
+ max_torque: 2.0
+ damping: 0.0
+ seed: 42
+
+# Data Collection Parameters
+collector:
+  run_collector: True
+  num_trajectories: 50
+  episode_time: 100
+  policy_seed: 35
+  save: True
+
+# Model Parameterrs
+model:
+ run_model: True
+ name: SimpleNN
+ input_dim: 3
+ hidden_dim: 64
+ output_dim: 2
+
+# Training and Testing Parameters
+trainer:
+  run_trainer: True
+  batch_size: 32
+  steps: 100000
+  log_interval: 100
+# Visualizer Parameters
+
+# Rollout Engine
+rollout_engine:
+  run_rollouts: True
+  horizon: 1
+
+
+# Hyperparameters
+hyperparams:
+  optimizer: Adam
+  loss: MSE
+  lr: 3e-4
+  
+
