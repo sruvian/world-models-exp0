@@ -69,10 +69,8 @@ def trainer(
         c_train_n_s = train_next_states[idx]
         c_train_a = train_actions[idx]
 
-        model_features = torch.cat([c_train_s, c_train_a], dim =  1)
-
         optimizer.zero_grad()
-        output = model(model_features)        
+        output, _ = model(c_train_s, c_train_a)      
         loss = loss_func(output, c_train_n_s)
         loss.backward()
         optimizer.step()
@@ -81,7 +79,7 @@ def trainer(
         if (step % log_interval == 0) or (step == steps-1):
             model.eval()
             with torch.no_grad():
-                val_hat = model(torch.cat([val_states, val_actions], dim = 1))
+                val_hat, _ = model(val_states, val_actions)
                 val_loss = loss_func(val_next_states, val_hat)
                 model.train()
                 logger.log(running_loss / log_interval, val_loss.item())
@@ -89,5 +87,3 @@ def trainer(
                 running_loss = 0            
 
     return model
-
-

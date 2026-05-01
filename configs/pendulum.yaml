@@ -20,11 +20,12 @@ collector:
 
 # Model Parameterrs
 model:
- run_model: False
- name: SimpleNN
- input_dim: 3
- hidden_dim: 64
- output_dim: 2
+  run_model: True
+  name: WorldModel
+  state_dim: 3
+  action_dim: 1
+  hidden_dim: 64
+  latent_dim: 8
 
 # Training and Testing Parameters
 trainer:
@@ -45,5 +46,12 @@ hyperparams:
   optimizer: Adam
   loss: MSE
   lr: 3e-4
+  rollout_decay: "Linear"
+  gamma: 0.9
   
 
+checkpointing:
+  save: True
+  save_path: "checkpoints/"
+  load: False
+  load_path: null

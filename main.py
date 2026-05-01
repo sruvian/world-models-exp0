@@ -40,7 +40,8 @@ if __name__=="__main__":
                                         collector_config["policy_seed"], collector_config["save"])
     
     if model_config["run_model"]:
-        model_params = {k: v for k, v in model_config.items() if k not in ("name", "run_model")}
+        model_params = {k: v for k, v in model_config.items() 
+                        if k not in ("name", "run_model")}
         model = make_model(model_config["name"], **model_params)
 
         if hyperparams_config["optimizer"] not in opts:
