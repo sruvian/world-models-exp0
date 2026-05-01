@@ -1,7 +1,8 @@
 # Environment
 environment:
- name: "pendulum"
- gravity: 9.81
+ run_env: True
+ name: "PendulumSim"
+ gravity: 9.8
  pen_mass: 1.0
  pen_length: 1.0
  dt: 0.01
@@ -11,6 +12,7 @@ environment:
 
 # Data Collection Parameters
 collector:
+  run_collector: True
   num_trajectories: 50
   episode_time: 100
   policy_seed: 35
@@ -18,6 +20,7 @@ collector:
 
 # Model Parameterrs
 model:
+ run_model: False
  name: SimpleNN
  input_dim: 3
  hidden_dim: 64
@@ -25,6 +28,7 @@ model:
 
 # Training and Testing Parameters
 trainer:
+  run_trainer: False
   batch_size: 32
   steps: 100000
   log_interval: 100
@@ -32,6 +36,7 @@ trainer:
 
 # Rollout Engine
 rollout_engine:
+  run_rollouts: False
   horizon: 1
 
 

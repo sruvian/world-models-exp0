@@ -1,5 +1,5 @@
-from simplenn import SimpleNN
-from wmodel import WorldModel
+from .simplenn import SimpleNN
+from .wmodel import WorldModel
 
 model_reg = {"SimpleNN" : SimpleNN}
 

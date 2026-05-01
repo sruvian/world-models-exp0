@@ -1,5 +1,5 @@
-from pendulum import PendulumSim
-from cartpole import CartPoleSim
+from .pendulum import PendulumSim
+from .cartpole import CartPoleSim
 
 envs = {"PendulumSim": PendulumSim, "CartpoleSim": CartPoleSim}
 

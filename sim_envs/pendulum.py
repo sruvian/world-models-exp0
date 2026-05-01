@@ -3,7 +3,7 @@ import numpy as np
 
 class PendulumSim():
 
-    def __init__(self, gravity: float, pen_mass: float, pen_length: float, dt: float, max_torque: float, damping: int, seed: int) -> None:
+    def __init__(self, gravity: float, pen_mass: float, pen_length: float, dt: float, max_torque: float, damping: float, seed: int) -> None:
         
         # Physical parameters
 
@@ -46,10 +46,6 @@ class PendulumSim():
         return self.get_state()
 
     def get_state(self) -> np.ndarray:
-        if self.env_init:
-            return np.array([self.theta, self.theta_dot])
-        else:
-            raise ValueError("Reset the environment to begin simulation")
-        
-    
-    
+        if not self.env_init:
+            raise ValueError("Call reset() before calling get_state()")
+        return np.array([np.cos(self.theta), np.sin(self.theta), self.theta_dot])
