@@ -1,3 +1,5 @@
+from typing import Callable
+from functools import partial
 import numpy as np
 import torch
 from logger.logger import Logger
@@ -54,9 +56,12 @@ def trainer(
         loss_func: torch.nn.Module,
         batch_size: int,
         steps: int,
+        rollout_decay: str,
+        gamma: float,
         log_interval: int
 )-> torch.nn.Module:
     
+    rollout_func = partial(lin_dec, gamma=gamma) if rollout_decay == "Linear" else partial(exp_dec, gamma=gamma)
     num_samples = train_states.shape[0]
     running_loss = 0
     
@@ -72,7 +77,7 @@ def trainer(
 
         K = c_train_s.shape[1]
 
-        total_loss = rollout_loss(model, c_train_s, c_train_a, c_train_n_s, loss_func, device = train_states.device)
+        total_loss = rollout_loss(model, c_train_s, c_train_a, c_train_n_s, loss_func, rollout_func, device = train_states.device)
 
         total_loss.backward()
         optimizer.step()
@@ -82,7 +87,7 @@ def trainer(
             model.eval()
             with torch.no_grad():
                 val_idx = torch.randint(0, val_states.shape[0], (batch_size,), device=val_states.device)
-                val_loss = rollout_loss(model, val_states[val_idx], val_actions[val_idx], val_next_states[val_idx], loss_func, device = train_states.device)
+                val_loss = rollout_loss(model, val_states[val_idx], val_actions[val_idx], val_next_states[val_idx], loss_func, rollout_func, device = train_states.device)
                 model.train()
                 logger.log(running_loss / log_interval, val_loss.item())
 
@@ -91,7 +96,7 @@ def trainer(
     return model
 
 
-def rollout_loss(model: WorldModel, states: torch.Tensor, actions: torch.Tensor, next_states: torch.Tensor, loss_func: torch.nn.Module, device: torch.device):
+def rollout_loss(model: WorldModel, states: torch.Tensor, actions: torch.Tensor, next_states: torch.Tensor, loss_func: torch.nn.Module, rollout_func: Callable, device: torch.device):
     K = states.shape[1]
     z = model.encode(states[:, 0, :])
     total_loss = torch.zeros(1, device=device)
@@ -99,6 +104,13 @@ def rollout_loss(model: WorldModel, states: torch.Tensor, actions: torch.Tensor,
         a_k = actions[:, k].unsqueeze(-1)
         z = model.step(z, a_k)
         s_hat = model.decode(z)
-        weight = (K - k) / K
+        weight = rollout_func(K, k)
         total_loss += weight * loss_func(s_hat, next_states[:, k, :])
     return total_loss
+
+
+def lin_dec(K, k, gamma):
+    return (K - k) / K
+
+def exp_dec(K, k, gamma):
+    return gamma ** k
