@@ -75,8 +75,6 @@ def trainer(
 
         optimizer.zero_grad()
 
-        K = c_train_s.shape[1]
-
         total_loss = rollout_loss(model, c_train_s, c_train_a, c_train_n_s, loss_func, rollout_func, device = train_states.device)
 
         total_loss.backward()
@@ -89,7 +87,7 @@ def trainer(
                 val_idx = torch.randint(0, val_states.shape[0], (batch_size,), device=val_states.device)
                 val_loss = rollout_loss(model, val_states[val_idx], val_actions[val_idx], val_next_states[val_idx], loss_func, rollout_func, device = train_states.device)
                 model.train()
-                logger.log(running_loss / log_interval, val_loss.item())
+                logger.log(running_loss / log_interval, val_loss.item(), step)
 
                 running_loss = 0            
 
