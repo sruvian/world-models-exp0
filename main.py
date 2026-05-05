@@ -86,3 +86,14 @@ if __name__=="__main__":
             f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
             f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}.npz")
         logger.save(log_path, yaml_out["datasets"]["use_existing"], yaml_out["datasets"]["paths"])
+
+        if yaml_out["checkpointing"]["save"]:
+            os.makedirs(yaml_out["checkpointing"]["save_path"], exist_ok=True)
+            checkpoint_path = os.path.join(
+                yaml_out["checkpointing"]["save_path"],
+                f"model_{model_config['name']}_g{env_config['gravity']}_l{env_config['pen_length']}"
+                f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
+                f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}.pt"
+            )
+            torch.save(trained_model.state_dict(), checkpoint_path)
+            print(f"[CHECKPOINT] Saved to {checkpoint_path}")

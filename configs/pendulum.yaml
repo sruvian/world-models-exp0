@@ -56,7 +56,7 @@ hyperparams:
 
 checkpointing:
   save: True
-  save_path: "checkpoints/"
+  save_path: "model_saves/"
   load: False
   load_path: null
 
