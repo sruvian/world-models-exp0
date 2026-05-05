@@ -6,12 +6,15 @@ from models.model import make_model
 from collector.collect import collect_trajectories
 from trainer.trainer import split_gen, trainer
 from rolloutEngine.rollout_engine import RolloutEngine
+import glob
+import os
 
 import yaml
 import argparse
 
 
 opts = {"Adam": torch.optim.Adam, "SGD": torch.optim.SGD}
+losses = {"MSE": torch.nn.MSELoss}
 
 
 if __name__=="__main__":
@@ -30,15 +33,30 @@ if __name__=="__main__":
     rollout_config = yaml_out["rollout_engine"]
     hyperparams_config = yaml_out["hyperparams"]
 
-    env_params = {k: v for k, v in env_config.items() if k not in ("name", "run_env")}
-    if env_config["run_env"]:
+    if yaml_out["datasets"]["use_existing"]:
+
+        all_states, all_actions, all_metadata = [], [], []
+        for pattern in yaml_out["datasets"]["paths"]:
+            for path in glob.glob(pattern):
+                    data = np.load(path)
+                    all_states.append(data["states"])
+                    all_actions.append(data["actions"])
+                    all_metadata.append({k: data[k].item() for k in 
+                                ["gravity", "length", "dt", "damping", 
+                                "mass", "env_seed", "pol_seed"]})
+        states = np.concatenate(all_states, axis=0)
+        actions = np.concatenate(all_actions, axis=0)
+        
+    else:
+        all_metadata = []
+        env_params = {k: v for k, v in env_config.items() if k not in ("name", "run_env")}
         print(f"[ENV] {env_config['name']} | g={env_config['gravity']} | l={env_config['pen_length']}")
         environment = make_env(env_config["name"], **env_params)
-    if collector_config["run_collector"]:
         print(f"[COLLECTOR] {collector_config['num_trajectories']} trajectories x {collector_config['episode_time']} steps")
-        collector = collect_trajectories(environment, collector_config["num_trajectories"], collector_config["episode_time"],
+        states, actions, metadata = collect_trajectories(environment, collector_config["num_trajectories"], collector_config["episode_time"],
                                         collector_config["policy_seed"], collector_config["save"])
-    
+        all_metadata.append(metadata)
+
     if model_config["run_model"]:
         model_params = {k: v for k, v in model_config.items() 
                         if k not in ("name", "run_model")}
@@ -46,8 +64,25 @@ if __name__=="__main__":
 
         if hyperparams_config["optimizer"] not in opts:
             raise ValueError("Supports Adam and SGD")
-        opt = hyperparams_config["optimizer"]
-        optimizer = opt(model.parameters(), hyperparams_config["lr"])
+        print(type(hyperparams_config["lr"]))
+        optimizer = opts[hyperparams_config["optimizer"]](model.parameters(), lr = hyperparams_config["lr"])
+        loss_func = losses[hyperparams_config["loss"]]()
 
-    
+        train_s, train_s_next, train_a, val_s, val_s_next, val_a = split_gen(states, actions, hyperparams_config["rollout_steps"], yaml_out["settings"]["device"])
 
+        logger = Logger(model_config["name"], hyperparams_config["optimizer"], hyperparams_config["loss"], 
+                hyperparams_config["lr"], trainer_config["batch_size"], trainer_config["steps"],
+                env_config["gravity"], env_config["pen_length"], model_config["latent_dim"])
+        logger.start()
+        trained_model = trainer(train_s, train_s_next, train_a, val_s, val_s_next, val_a, model, logger, optimizer, loss_func, trainer_config["batch_size"], trainer_config["steps"],
+                                hyperparams_config["rollout_decay"], hyperparams_config["gamma"], trainer_config["log_interval"])
+        logger.finish()
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        log_dir = os.path.join(base_dir, "logfiles")
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        log_path = os.path.join(log_dir, 
+            f"log_{model_config['name']}_g{env_config['gravity']}_l{env_config['pen_length']}"
+            f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
+            f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}.npz")
+        logger.save(log_path, yaml_out["datasets"]["use_existing"], yaml_out["datasets"]["paths"])

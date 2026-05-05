@@ -33,10 +33,20 @@ class Logger:
     def finish(self):
         self.total_time = time.time() - self.start_time
 
-    def save(self, path):
-        np.savez(path,
+    def save(self, path: str, combined_data: bool, combined_paths: str | list[str]):
+        if combined_data:
+            np.savez(path,
                  train_loss=np.array(self.train_loss_arr),
                  val_loss=np.array(self.val_loss_arr),
                  log_steps=np.array(self.step_log),
                  total_time=self.total_time,
+                 paths = combined_paths,
                  **self.config)
+        else:
+            np.savez(path,
+                    train_loss=np.array(self.train_loss_arr),
+                    val_loss=np.array(self.val_loss_arr),
+                    log_steps=np.array(self.step_log),
+                    total_time=self.total_time,
+                    paths = "None",
+                    **self.config)

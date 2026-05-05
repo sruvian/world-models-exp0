@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from logger.logger import Logger
 from models import WorldModel
-
+import tqdm
 
 
 def split_gen(states: np.ndarray | torch.Tensor, 
@@ -64,8 +64,8 @@ def trainer(
     rollout_func = partial(lin_dec, gamma=gamma) if rollout_decay == "Linear" else partial(exp_dec, gamma=gamma)
     num_samples = train_states.shape[0]
     running_loss = 0
-    
-    for step in range(steps):
+    pbar = tqdm.tqdm(range(steps), desc="Training")
+    for step in pbar:
         
         idx = torch.randint(0, num_samples, (batch_size,), device = train_states.device)
 
@@ -88,7 +88,7 @@ def trainer(
                 val_loss = rollout_loss(model, val_states[val_idx], val_actions[val_idx], val_next_states[val_idx], loss_func, rollout_func, device = train_states.device)
                 model.train()
                 logger.log(running_loss / log_interval, val_loss.item(), step)
-
+                pbar.set_postfix(train_loss=running_loss/log_interval, val_loss=val_loss.item())
                 running_loss = 0            
 
     return model

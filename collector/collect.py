@@ -3,7 +3,7 @@ import numpy as np
 import os
 from tqdm import tqdm
 
-def collect_trajectories(env, num_trajectories: int, episode_time: int, policy_seed:int, save: bool = True):
+def collect_trajectories(env, num_trajectories: int, episode_time: int, policy_seed:int, save: bool = True)-> tuple[np.ndarray, np.ndarray, dict[str, int|float]]:
 
     rng = np.random.default_rng(policy_seed)
     states = []
@@ -27,7 +27,17 @@ def collect_trajectories(env, num_trajectories: int, episode_time: int, policy_s
     states = np.array(states, dtype=np.float32)
     actions = np.array(actions, dtype=np.float32)
 
-
+    metadata = {
+        "num_trajectories": num_trajectories,
+        "episode_time": episode_time,
+        "env_seed": env.env_seed,
+        "pol_seed": policy_seed,
+        "dt": env.dt,
+        "damping": env.damping,
+        "gravity": env.gravity,
+        "mass": env.pen_mass,
+        "length": env.pen_length,
+    }
     
     if save:
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -45,14 +55,6 @@ def collect_trajectories(env, num_trajectories: int, episode_time: int, policy_s
         np.savez(save_file,
                 states = states,
                 actions = actions,
-                num_trajectories = num_trajectories,
-                episode_time = episode_time,
-                env_seed = env.env_seed,
-                pol_seed = policy_seed,
-                dt = env.dt,
-                damping = env.damping,
-                gravity=env.gravity,
-                mass=env.pen_mass,
-                length=env.pen_length,)
+                **metadata)
 
-    return (states, actions)
+    return states, actions, metadata

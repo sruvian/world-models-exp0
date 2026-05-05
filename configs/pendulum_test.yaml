@@ -1,49 +1,64 @@
 # Environment
 environment:
- run_env: True
- name: "PendulumSim"
- gravity: 9.8
- pen_mass: 1.0
- pen_length: 1.0
- dt: 0.01
- max_torque: 2.0
- damping: 0.0
- seed: 42
+  name: "PendulumSim"
+  gravity: 9.8
+  pen_mass: 1.0
+  pen_length: 2.0
+  dt: 0.01
+  max_torque: 2.0
+  damping: 0.0
+  seed: 42
 
-# Data Collection Parameters
+# Data Collection
 collector:
-  run_collector: True
   num_trajectories: 50
   episode_time: 100
   policy_seed: 35
-  save: True
+  save: False
 
-# Model Parameterrs
+# Datasets
+datasets:
+  use_existing: False
+  paths:
+    - "datasets/v0_PendulumSim_*.npz"
+
+# Model
 model:
- run_model: False
- name: SimpleNN
- input_dim: 3
- hidden_dim: 64
- output_dim: 2
+  run_model: True
+  name: WorldModel
+  state_dim: 3
+  action_dim: 1
+  hidden_dim: 64
+  latent_dim: 8
 
-# Training and Testing Parameters
+# Trainer
 trainer:
-  run_trainer: False
+  run_trainer: True
   batch_size: 32
-  steps: 100000
-  log_interval: 100
-# Visualizer Parameters
+  steps: 500
+  log_interval: 50
 
 # Rollout Engine
 rollout_engine:
   run_rollouts: False
   horizon: 1
 
-
 # Hyperparameters
 hyperparams:
   optimizer: Adam
   loss: MSE
-  lr: 3e-4
-  
+  lr: 0.001
+  rollout_steps: 1
+  rollout_decay: "Linear"
+  gamma: 0.9
 
+# Checkpointing
+checkpointing:
+  save: False
+  save_path: "checkpoints/"
+  load: False
+  load_path: null
+
+# Settings
+settings:
+  device: "cpu"
