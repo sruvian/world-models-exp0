@@ -57,14 +57,14 @@ if __name__=="__main__":
                                         collector_config["policy_seed"], collector_config["save"])
         all_metadata.append(metadata)
 
-    if model_config["run_model"]:
+    if model_config["run_model"] and trainer_config["run_trainer"]:
         model_params = {k: v for k, v in model_config.items() 
                         if k not in ("name", "run_model")}
         model = make_model(model_config["name"], **model_params)
 
         if hyperparams_config["optimizer"] not in opts:
             raise ValueError("Supports Adam and SGD")
-        print(type(hyperparams_config["lr"]))
+
         optimizer = opts[hyperparams_config["optimizer"]](model.parameters(), lr = hyperparams_config["lr"])
         loss_func = losses[hyperparams_config["loss"]]()
 
