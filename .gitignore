@@ -4,3 +4,4 @@ model_saves/
 datasets/
 log_test.py
 logfiles/
+rollout_plots/

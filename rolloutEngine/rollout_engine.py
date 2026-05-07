@@ -1,33 +1,35 @@
 import torch
-from models.simplenn import SimpleNN
+from models import WorldModel
 
 
 
 class RolloutEngine:
 
-    def __init__(self, model: torch.nn.Module, loss: torch.nn.Module):
+    def __init__(self, model: WorldModel, loss: torch.nn.Module):
 
         self.model = model
         self.loss = loss
 
 
-    def rollout(self, states: torch.Tensor, actions: torch.Tensor, horizon: int|None = None) -> torch.Tensor:
+    def rollout(self, states: torch.Tensor, actions: torch.Tensor, horizon: int) -> tuple[torch.Tensor, torch.Tensor]:
 
-        self.model.eval()
-        horizons = []
-        if horizon is None:
-            horizon = actions.shape[1]
-
-        with torch.no_grad():
-            pred = states[:, 0, :]
-
-            for i in range(horizon): 
-                pred_action = torch.cat([pred, actions[:, i+1].unsqueeze(1)], dim =1 )
-                pred = self.model(pred_action)
-                horizons.append(pred)
         
-        return torch.stack(horizons, dim = 1)
-    
-    def rollout_loss(self, true_states: torch.Tensor, rollout_states: torch.Tensor, horizon: int)-> torch.Tensor:
+        if horizon < 1:
+            raise ValueError("Horizon cannot be negative")
+        
+        total_loss = torch.zeros(1, device = states.device)
+        self.model.eval()
+        self.model.to(device = states.device)
 
-        return self.loss(true_states[:, 1: horizon+1, :], rollout_states)
+        
+        preds = []
+        with torch.no_grad():
+            z = self.model.encode(states[:, 0, :])
+            for k in range(horizon):
+                a_k = actions[:, k].unsqueeze(-1)
+                z = self.model.step(z, a_k)
+                s_hat = self.model.decode(z)
+                preds.append(s_hat)
+                total_loss += self.loss(s_hat, states[:, k + 1, :])
+        preds = torch.stack(preds, dim=1)
+        return preds, total_loss

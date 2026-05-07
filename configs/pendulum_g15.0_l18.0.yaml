@@ -5,9 +5,9 @@ environment:
  pen_mass: 1.0
  pen_length: 18.0
  dt: 0.01
- max_torque: 2.0
+ max_torque: 10.0
  damping: 0.0
- seed: 42
+ seed: 51
 
 # Data Collection Parameters
 collector:
@@ -51,7 +51,7 @@ hyperparams:
   lr: 0.001
   rollout_decay: "Linear"
   gamma: 0.9
-  rollout_steps: 1
+  rollout_steps: 50
   
 
 checkpointing:

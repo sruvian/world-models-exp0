@@ -5,9 +5,9 @@ environment:
  pen_mass: 1.0
  pen_length: 18.0
  dt: 0.01
- max_torque: 2.0
+ max_torque: 10.0
  damping: 0.0
- seed: 42
+ seed: 45
 
 # Data Collection Parameters
 collector:
@@ -41,7 +41,7 @@ trainer:
 # Rollout Engine
 rollout_engine:
   run_rollouts: False
-  horizon: 1
+  horizon: 50
 
 
 # Hyperparameters

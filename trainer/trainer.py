@@ -59,7 +59,7 @@ def trainer(
         rollout_decay: str,
         gamma: float,
         log_interval: int
-)-> torch.nn.Module:
+)-> WorldModel:
     
     rollout_func = partial(lin_dec, gamma=gamma) if rollout_decay == "Linear" else partial(exp_dec, gamma=gamma)
     num_samples = train_states.shape[0]
@@ -86,10 +86,10 @@ def trainer(
             with torch.no_grad():
                 val_idx = torch.randint(0, val_states.shape[0], (batch_size,), device=val_states.device)
                 val_loss = rollout_loss(model, val_states[val_idx], val_actions[val_idx], val_next_states[val_idx], loss_func, rollout_func, device = train_states.device)
-                model.train()
-                logger.log(running_loss / log_interval, val_loss.item(), step)
-                pbar.set_postfix(train_loss=running_loss/log_interval, val_loss=val_loss.item())
-                running_loss = 0            
+            model.train()
+            logger.log(running_loss / log_interval, val_loss.item(), step)
+            pbar.set_postfix(train_loss=running_loss/log_interval, val_loss=val_loss.item())
+            running_loss = 0            
 
     return model
 
