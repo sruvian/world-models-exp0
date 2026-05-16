@@ -4,3 +4,4 @@ model_saves/
 datasets/
 logfiles/
 rollout_plots/
+probe_results/

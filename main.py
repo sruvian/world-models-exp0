@@ -35,6 +35,7 @@ if __name__=="__main__":
     hyperparams_config = yaml_out["hyperparams"]
     device = yaml_out["settings"]["device"]
     trained_model = None
+    states, actions = None, None
     if yaml_out["datasets"]["use_existing"]:
 
         all_states, all_actions, all_metadata = [], [], []
@@ -49,7 +50,7 @@ if __name__=="__main__":
         states = np.concatenate(all_states, axis=0)
         actions = np.concatenate(all_actions, axis=0)
         
-    else:
+    elif env_config["run_env"]:
         all_metadata = []
         env_params = {k: v for k, v in env_config.items() if k not in ("name", "run_env")}
         print(f"[ENV] {env_config['name']} | g={env_config['gravity']} | l={env_config['pen_length']}")
@@ -72,6 +73,8 @@ if __name__=="__main__":
         optimizer = opts[hyperparams_config["optimizer"]](model.parameters(), lr = hyperparams_config["lr"])
         loss_func = losses[hyperparams_config["loss"]]()
 
+        if states is None or actions is None:
+            raise ValueError("Run the collector or use an existing dataset")
         train_s, train_s_next, train_a, val_s, val_s_next, val_a = split_gen(states, actions, hyperparams_config["rollout_steps"], device)
 
         logger = Logger(model_config["name"], hyperparams_config["optimizer"], hyperparams_config["loss"], 
@@ -83,10 +86,14 @@ if __name__=="__main__":
         logger.finish()
         base_dir = os.path.dirname(os.path.abspath(__file__))
         log_dir = os.path.join(base_dir, "logfiles")
+        if yaml_out["datasets"]["use_existing"] and len(glob.glob(yaml_out["datasets"]["paths"])):
+            config_tag = "combined"
+        else:
+            config_tag = f"g{env_config['gravity']}_l{env_config['pen_length']}"
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
         log_path = os.path.join(log_dir, 
-            f"log_{model_config['name']}_g{env_config['gravity']}_l{env_config['pen_length']}"
+            f"log_{model_config['name']}_{config_tag}"
             f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
             f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}.npz")
         logger.save(log_path, yaml_out["datasets"]["use_existing"], yaml_out["datasets"]["paths"])
@@ -95,7 +102,7 @@ if __name__=="__main__":
             os.makedirs(yaml_out["checkpointing"]["save_path"], exist_ok=True)
             checkpoint_path = os.path.join(
                 yaml_out["checkpointing"]["save_path"],
-                f"model_{model_config['name']}_g{env_config['gravity']}_l{env_config['pen_length']}"
+                f"model_{model_config['name']}_{config_tag}"
                 f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
                 f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}.pt"
             )
@@ -111,8 +118,10 @@ if __name__=="__main__":
             rollout_model = trained_model
         else:
             raise ValueError("Rollout requested but no model available — set load: true or run_trainer: true")
-
+        
         env_params = {k: v for k, v in env_config.items() if k not in ("name", "run_env")}
+        if rollout_config["zero_actions"]:
+            env_params["max_torque"] = 0.0
         environment = make_env(env_config["name"], **env_params)
         roll_states, roll_actions, _ = collect_trajectories(
             environment, 1, collector_config["episode_time"],
@@ -120,6 +129,7 @@ if __name__=="__main__":
         )
         roll_states = torch.from_numpy(roll_states).float().to(device)   
         roll_actions = torch.from_numpy(roll_actions).float().to(device) 
+        
 
         loss_func = losses[hyperparams_config["loss"]]()
         roll_eng = RolloutEngine(rollout_model, loss_func)

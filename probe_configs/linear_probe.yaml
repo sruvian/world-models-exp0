@@ -1,0 +1,35 @@
+environment:
+  name: "PendulumSim"
+  gravity: 0.0
+  pen_mass: 1.0
+  pen_length: 0.0
+  dt: 0.01
+  max_torque: 10.0
+  damping: 0.0
+  seed: 46
+
+# Data Collection
+collector:
+  num_trajectories: 20
+  episode_time: 1000
+  policy_seed: 35
+  save: False
+
+model:
+  name: WorldModel
+  state_dim: 3
+  action_dim: 1
+  hidden_dim: 64
+  latent_dim: 0
+
+# Checkpointing
+checkpointing:
+  load_paths: "model_saves/*.pt"
+
+# Settings
+settings:
+  device: "cpu"
+
+probe:
+  output_csv: "probe_results/results.csv"
+  alpha: 100

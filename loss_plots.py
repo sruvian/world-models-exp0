@@ -28,14 +28,17 @@ if __name__ == "__main__":
             config = {k: data[k].item() for k in 
                       ["model_name", "optimizer_name", "loss_name", 
                        "lr", "batch_size", "steps", "gravity", "length", "latent_dim"]}
-
+            if "combined" in log_path:
+                config_tag = "combined"
+            else:
+                config_tag = f"g={config['gravity']} l={config['length']}"
             fig, ax = plt.subplots(figsize=(10, 5))
             ax.plot(steps, train_loss, label="Train Loss")
             ax.plot(steps, val_loss, label="Val Loss")
             ax.set_xlabel("Step")
             ax.set_ylabel("Loss")
             ax.set_title(
-                f"{config['model_name']} | g={config['gravity']} l={config['length']} "
+                f"{config['model_name']} | {config_tag} "
                 f"latent={config['latent_dim']} lr={config['lr']}"
             )
             ax.legend()
