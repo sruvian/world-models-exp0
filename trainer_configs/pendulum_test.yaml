@@ -19,29 +19,29 @@ collector:
 
 # Datasets
 datasets:
-  use_existing: False
+  use_existing: True
   paths:
     - "datasets/v0_PendulumSim_*.npz"
 
 # Model
 model:
-  run_model: False
+  run_model: True
   name: WorldModel
   state_dim: 3
   action_dim: 1
   hidden_dim: 64
-  latent_dim: 64
+  latent_dim: 8
 
 # Trainer
 trainer:
-  run_trainer: False
+  run_trainer: True
   batch_size: 32
   steps: 500
   log_interval: 50
 
 # Rollout Engine
 rollout_engine:
-  run_rollouts: True
+  run_rollouts: False
   horizon: 500
   zero_actions: False
 
@@ -56,7 +56,7 @@ hyperparams:
 
 # Checkpointing
 checkpointing:
-  save: False
+  save: True
   save_path: "model_saves/"
   load: True
   load_path: model_saves/model_WorldModel_g9.8_l10.0_k5_Linear_steps100000_latent64.pt

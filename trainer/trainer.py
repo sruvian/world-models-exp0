@@ -42,6 +42,55 @@ def split_gen(states: np.ndarray | torch.Tensor,
 
     return train_s, train_s_next, train_a, val_s, val_s_next, val_a
 
+def stratified_split_gen(states: np.ndarray | torch.Tensor, 
+              actions: np.ndarray | torch.Tensor, config_sizes: list[int],
+              rollout:int = 1, device: str = "cpu") -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    
+    N, T, state_dim = states.shape
+    new_states, new_actions, new_nxt_states = [], [], []
+    
+    
+    boundaries = np.cumsum([0] + config_sizes)
+    samples_per_config = N // len(config_sizes)
+    
+    for i in range(len(config_sizes)):
+        start = boundaries[i]
+        end = boundaries[i + 1]
+        config_n = end - start
+        
+        traj_idx = np.random.randint(start, end, size=samples_per_config)
+        time_idx = np.random.randint(0, T - rollout, size=samples_per_config)
+        
+        for j in range(samples_per_config):
+            t = traj_idx[j]
+            s = time_idx[j]
+            new_states.append(states[t, s:s+rollout])
+            new_actions.append(actions[t, s:s+rollout])
+            new_nxt_states.append(states[t, s+1:s+rollout+1])
+    
+    new_states = np.array(new_states, dtype=np.float32)
+    new_actions = np.array(new_actions, dtype=np.float32)
+    new_nxt_states = np.array(new_nxt_states, dtype=np.float32)
+    
+    M = new_states.shape[0]
+    perm = np.random.permutation(M)
+    train_idx = int(0.9 * M)
+    
+    new_states = new_states[perm]
+    new_actions = new_actions[perm]
+    new_nxt_states = new_nxt_states[perm]
+    
+    train_s      = torch.from_numpy(new_states[:train_idx]).float().to(device)
+    train_a      = torch.from_numpy(new_actions[:train_idx]).float().to(device)
+    train_s_next = torch.from_numpy(new_nxt_states[:train_idx]).float().to(device)
+    val_s        = torch.from_numpy(new_states[train_idx:]).float().to(device)
+    val_a        = torch.from_numpy(new_actions[train_idx:]).float().to(device)
+    val_s_next   = torch.from_numpy(new_nxt_states[train_idx:]).float().to(device)
+
+    print(f"[STRATIFIED] {len(config_sizes)} configs, {samples_per_config} samples each, total={M}")
+    
+    return train_s, train_s_next, train_a, val_s, val_s_next, val_a
+
 
 def trainer(
         train_states: torch.Tensor,

@@ -4,7 +4,7 @@ from logger.logger import Logger
 from sim_envs.envs import make_env
 from models.model import make_model
 from collector.collect import collect_trajectories
-from trainer.trainer import split_gen, trainer
+from trainer.trainer import split_gen, trainer, stratified_split_gen
 from rolloutEngine.rollout_engine import RolloutEngine
 import matplotlib.pyplot as plt
 import glob
@@ -38,12 +38,13 @@ if __name__=="__main__":
     states, actions = None, None
     if yaml_out["datasets"]["use_existing"]:
 
-        all_states, all_actions, all_metadata = [], [], []
+        all_states, all_actions, all_metadata, config_sizes = [], [], [], []
         for pattern in yaml_out["datasets"]["paths"]:
             for path in glob.glob(pattern):
                     data = np.load(path)
                     all_states.append(data["states"])
                     all_actions.append(data["actions"])
+                    config_sizes.append(data["states"].shape[0])
                     all_metadata.append({k: data[k].item() for k in 
                                 ["gravity", "length", "dt", "damping", 
                                 "mass", "env_seed", "pol_seed"]})
@@ -75,7 +76,16 @@ if __name__=="__main__":
 
         if states is None or actions is None:
             raise ValueError("Run the collector or use an existing dataset")
-        train_s, train_s_next, train_a, val_s, val_s_next, val_a = split_gen(states, actions, hyperparams_config["rollout_steps"], device)
+        paths = yaml_out["datasets"]["paths"]
+        is_combined = yaml_out["datasets"]["use_existing"] and (
+            len(paths) > 1 or "*" in paths[0]
+        )
+        config_tag = "combined" if is_combined else f"g{env_config['gravity']}_l{env_config['pen_length']}"
+        if config_tag == "combined":
+            train_s, train_s_next, train_a, val_s, val_s_next, val_a = stratified_split_gen(states, actions, config_sizes, hyperparams_config["rollout_steps"], device)
+            config_tag = "combinedstratified"
+        else:
+            train_s, train_s_next, train_a, val_s, val_s_next, val_a = split_gen(states, actions, hyperparams_config["rollout_steps"], device)
 
         logger = Logger(model_config["name"], hyperparams_config["optimizer"], hyperparams_config["loss"], 
                 hyperparams_config["lr"], trainer_config["batch_size"], trainer_config["steps"],
@@ -86,10 +96,7 @@ if __name__=="__main__":
         logger.finish()
         base_dir = os.path.dirname(os.path.abspath(__file__))
         log_dir = os.path.join(base_dir, "logfiles")
-        if yaml_out["datasets"]["use_existing"] and len(glob.glob(yaml_out["datasets"]["paths"])):
-            config_tag = "combined"
-        else:
-            config_tag = f"g{env_config['gravity']}_l{env_config['pen_length']}"
+        
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
         log_path = os.path.join(log_dir, 

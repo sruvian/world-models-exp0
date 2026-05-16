@@ -51,7 +51,7 @@ hyperparams:
   lr: 0.001
   rollout_decay: "Linear"
   gamma: 0.9
-  rollout_steps: 50
+  rollout_steps: 5
   
 
 checkpointing:

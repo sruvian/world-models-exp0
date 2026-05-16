@@ -74,7 +74,7 @@ def parse_model(model_path: str)-> dict:
     model_name = model_name.replace(".pt", "")
     
     model_components = model_name.split("_")[2:]
-    if "combined" in model_components:
+    if "combined" or "combinedstratified" in model_components:
         flag = True
         k = int(model_components[1][1:])
         
