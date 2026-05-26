@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from pendulum import PendulumSim
+from sim_envs import make_env
 
-env = PendulumSim(42)
+env = make_env("PendulumSim", gravity = 9.8, pen_mass = 1.0, pen_length = 10, dt = 0.01, max_torque = 10, damping = 0, seed =  42)
 
 initial_state = env.reset()
 print(f"Initial Theta: {initial_state[0]}, Initial Ang Velocity: {initial_state[1]}")

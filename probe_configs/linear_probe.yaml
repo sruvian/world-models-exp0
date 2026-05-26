@@ -24,7 +24,7 @@ model:
 
 # Checkpointing
 checkpointing:
-  load_paths: "model_saves/*combinedstratified*.pt"
+  load_paths: "model_saves/*.pt"
 
 # Settings
 settings:

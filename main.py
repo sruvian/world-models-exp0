@@ -45,16 +45,15 @@ if __name__=="__main__":
                     all_states.append(data["states"])
                     all_actions.append(data["actions"])
                     config_sizes.append(data["states"].shape[0])
-                    all_metadata.append({k: data[k].item() for k in 
-                                ["gravity", "length", "dt", "damping", 
-                                "mass", "env_seed", "pol_seed"]})
+                    meta_keys = [k for k in data.files if k not in ("states", "actions")]
+                    all_metadata.append({k: data[k].item() for k in meta_keys})
         states = np.concatenate(all_states, axis=0)
         actions = np.concatenate(all_actions, axis=0)
         
     elif env_config["run_env"]:
         all_metadata = []
         env_params = {k: v for k, v in env_config.items() if k not in ("name", "run_env")}
-        print(f"[ENV] {env_config['name']} | g={env_config['gravity']} | l={env_config['pen_length']}")
+        print(f"[ENV] {env_config['name']} | g={env_config['gravity']} | l={env_config.get('length', 0.0)}")
         environment = make_env(env_config["name"], **env_params)
         print(f"[COLLECTOR] {collector_config['num_trajectories']} trajectories x {collector_config['episode_time']} steps")
         states, actions, metadata = collect_trajectories(environment, collector_config["num_trajectories"], collector_config["episode_time"],
@@ -80,16 +79,16 @@ if __name__=="__main__":
         is_combined = yaml_out["datasets"]["use_existing"] and (
             len(paths) > 1 or "*" in paths[0]
         )
-        config_tag = "combined" if is_combined else f"g{env_config['gravity']}_l{env_config['pen_length']}"
-        if config_tag == "combined":
-            train_s, train_s_next, train_a, val_s, val_s_next, val_a = stratified_split_gen(states, actions, config_sizes, hyperparams_config["rollout_steps"], device)
-            config_tag = "combinedstratified"
-        else:
-            train_s, train_s_next, train_a, val_s, val_s_next, val_a = split_gen(states, actions, hyperparams_config["rollout_steps"], device)
-
+        config_tag = "combined" if is_combined else f"g{env_config['gravity']}_l{env_config.get('length', 0.0)}"
+        # if config_tag == "combined":
+        #     train_s, train_s_next, train_a, val_s, val_s_next, val_a = stratified_split_gen(states, actions, hyperparams_config["rollout_steps"], device)
+        #     config_tag = "combinedstratified"
+        # else:
+        #     train_s, train_s_next, train_a, val_s, val_s_next, val_a = split_gen(states, actions, hyperparams_config["rollout_steps"], device)
+        train_s, train_s_next, train_a, val_s, val_s_next, val_a = split_gen(states, actions, hyperparams_config["rollout_steps"], device)
         logger = Logger(model_config["name"], hyperparams_config["optimizer"], hyperparams_config["loss"], 
                 hyperparams_config["lr"], trainer_config["batch_size"], trainer_config["steps"],
-                env_config["gravity"], env_config["pen_length"], model_config["latent_dim"])
+                env_config["gravity"], env_config.get("length", 0.0), model_config["latent_dim"])
         logger.start()
         trained_model = trainer(train_s, train_s_next, train_a, val_s, val_s_next, val_a, model, logger, optimizer, loss_func, trainer_config["batch_size"], trainer_config["steps"],
                                 hyperparams_config["rollout_decay"], hyperparams_config["gamma"], trainer_config["log_interval"])
@@ -127,8 +126,8 @@ if __name__=="__main__":
             raise ValueError("Rollout requested but no model available — set load: true or run_trainer: true")
         
         env_params = {k: v for k, v in env_config.items() if k not in ("name", "run_env")}
-        if rollout_config["zero_actions"]:
-            env_params["max_torque"] = 0.0
+        if "max_action" in env_params:
+            env_params["max_action"] = 0.0
         environment = make_env(env_config["name"], **env_params)
         roll_states, roll_actions, _ = collect_trajectories(
             environment, 1, collector_config["episode_time"],
@@ -147,9 +146,10 @@ if __name__=="__main__":
         
         true_np  = roll_states[0, 1:horizon+1, :].cpu().numpy()  
         pred_np  = preds[0].cpu().numpy()                         
-        labels   = [r"$\cos\theta$", r"$\sin\theta$", r"$\dot\theta$"]
-
-        fig, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
+        state_dim = roll_states.shape[-1]
+        all_labels = [r"$\cos\theta$", r"$\sin\theta$", r"$\dot\theta$", r"$x$", r"$\dot{x}$"]
+        labels = all_labels[:state_dim]
+        fig, axes = plt.subplots(state_dim, 1, figsize=(12, 3*state_dim), sharex=True)
         for i, (ax, label) in enumerate(zip(axes, labels)):
             ax.plot(true_np[:, i], label="True", linewidth=1.5)
             ax.plot(pred_np[:, i], label="Predicted", linewidth=1.5, linestyle="--")
@@ -158,14 +158,14 @@ if __name__=="__main__":
             ax.grid(True)
         axes[-1].set_xlabel("Rollout Step")
         fig.suptitle(
-            f"Rollout | g={env_config['gravity']} l={env_config['pen_length']} "
+            f"Rollout | g={env_config['gravity']} l={env_config.get('length', 0.0)} "
             f"horizon={horizon} loss={roll_loss.item():.4f}"
         )
         plt.tight_layout()
 
         plot_path = os.path.join("rollout_plots",
             f"rollout_{model_config['name']}"
-            f"_g{env_config['gravity']}_l{env_config['pen_length']}"
+            f"_g{env_config['gravity']}_l{env_config.get('length', 0.0)}"
             f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
             f"_h{horizon}_latent{model_config['latent_dim']}"
             f"_steps{trainer_config['steps']}.png")

@@ -3,20 +3,20 @@ import numpy as np
 
 class PendulumSim():
 
-    def __init__(self, gravity: float, pen_mass: float, pen_length: float, dt: float, max_torque: float, damping: float, seed: int) -> None:
+    def __init__(self, gravity: float, mass1: float, length: float, dt: float, max_action: float, damping: float, seed: int) -> None:
         
         # Physical parameters
 
         self.gravity = gravity #m/s
-        self.pen_mass = pen_mass # Kg
-        self.pen_length = pen_length #metres
+        self.mass1 = mass1 # Kg
+        self.length = length #metres
         self.dt = dt #seconds
-        self.max_torque = max_torque #Newton metres
+        self.max_action = max_action #Newton metres
         self.damping = damping
 
 
-        self.gl = self.gravity/ self.pen_length
-        self.ml2 = self.pen_mass * (self.pen_length**2)
+        self.gl = self.gravity/ self.length
+        self.ml2 = self.mass1 * (self.length**2)
         
         # Internal state
         self.theta = 0.0
@@ -29,7 +29,7 @@ class PendulumSim():
         if not self.env_init:
             raise ValueError("Call reset() before calling step")
         action = float(action)
-        action = np.clip(action, -self.max_torque, self.max_torque)        
+        action = np.clip(action, -self.max_action, self.max_action)        
         theta_ddot: float = - self.gl * np.sin(self.theta) + (action / self.ml2) - (self.damping * self.theta_dot / self.ml2)
         
         self.theta_dot += theta_ddot * self.dt
@@ -49,3 +49,14 @@ class PendulumSim():
         if not self.env_init:
             raise ValueError("Call reset() before calling get_state()")
         return np.array([np.cos(self.theta), np.sin(self.theta), self.theta_dot])
+    
+    def get_metadata(self) -> dict:
+        return {
+            "gravity": self.gravity,
+            "mass1": self.mass1,
+            "mass2": 0.0,          # placeholder for consistency
+            "length": self.length,
+            "dt": self.dt,
+            "damping": self.damping,
+            "env_seed": self.env_seed,
+        }

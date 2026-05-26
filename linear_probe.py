@@ -137,7 +137,7 @@ if __name__ == "__main__":
             collector_config = yaml_out["collector"]
             env_config = yaml_out["environment"]
             env_config["gravity"] = current_config["g"]
-            env_config["pen_length"] = current_config["l"]
+            env_config["length"] = current_config["l"]
             env_params = {k: v for k, v in env_config.items() if k not in ("name",)}
             environment = make_env(env_config["name"], **env_params)
             raw_states, _, _ = collect_trajectories(environment, 

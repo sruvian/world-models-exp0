@@ -127,6 +127,7 @@ def trainer(
         total_loss = rollout_loss(model, c_train_s, c_train_a, c_train_n_s, loss_func, rollout_func, device = train_states.device)
 
         total_loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
         running_loss += total_loss.item()
 

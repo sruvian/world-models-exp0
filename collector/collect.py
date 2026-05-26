@@ -3,6 +3,8 @@ import numpy as np
 import os
 from tqdm import tqdm
 
+from sim_envs.pendulum import PendulumSim
+
 def collect_trajectories(env, num_trajectories: int, episode_time: int, policy_seed:int, save: bool = True)-> tuple[np.ndarray, np.ndarray, dict[str, int|float]]:
 
     rng = np.random.default_rng(policy_seed)
@@ -16,7 +18,8 @@ def collect_trajectories(env, num_trajectories: int, episode_time: int, policy_s
         trajectory_actions = []
         trajectory_states.append(init_state)
         for time_step in range(episode_time):
-            action = rng.uniform(-env.max_torque, env.max_torque)
+            max_action = getattr(env, 'max_torque', getattr(env, 'max_force', 1.0))
+            action = rng.uniform(-max_action, max_action)
             trajectory_actions.append(action)
             next_state = env.step(action)
             trajectory_states.append(next_state)
@@ -30,15 +33,10 @@ def collect_trajectories(env, num_trajectories: int, episode_time: int, policy_s
     metadata = {
         "num_trajectories": num_trajectories,
         "episode_time": episode_time,
-        "env_seed": env.env_seed,
         "pol_seed": policy_seed,
-        "dt": env.dt,
-        "damping": env.damping,
-        "gravity": env.gravity,
-        "mass": env.pen_mass,
-        "length": env.pen_length,
+        **env.get_metadata()
     }
-    
+
     if save:
         base_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -46,11 +44,15 @@ def collect_trajectories(env, num_trajectories: int, episode_time: int, policy_s
 
         if not os.path.exists(datasets_dir):
             os.makedirs(datasets_dir)
-
+        meta = env.get_metadata()
+        meta_str = "_".join(f"{k}{v:.3f}" if isinstance(v, float) else f"{k}{v}"
+                            for k, v in meta.items()
+                            if k not in ("env_seed", "dt", "damping"))
         save_file = os.path.join(datasets_dir,
-                                f"v0_{env.__class__.__name__}_N{num_trajectories}_T{episode_time}"
-                                f"_env{env.env_seed}_pol{policy_seed}_dt{env.dt:.3f}_damp{env.damping:.3f}"
-                                f"_grav{env.gravity:.2f}_mass{env.pen_mass:.2f}_length{env.pen_length:.1f}.npz")
+            f"v0_{env.__class__.__name__}_N{num_trajectories}_T{episode_time}"
+            f"_env{meta['env_seed']}_pol{policy_seed}"
+            f"_dt{meta['dt']:.3f}_damp{meta['damping']:.3f}"
+            f"_{meta_str}.npz")
 
         np.savez(save_file,
                 states = states,

@@ -2,10 +2,10 @@
 environment:
  name: "PendulumSim"
  gravity: 15.0
- pen_mass: 1.0
- pen_length: 2.0
+ mass1: 1.0
+ length: 2.0
  dt: 0.01
- max_torque: 10.0
+ max_action: 10.0
  damping: 0.0
  seed: 49
 
