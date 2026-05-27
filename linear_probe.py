@@ -44,6 +44,10 @@ def run_probe(train_z: np.ndarray, val_z: np.ndarray,
     
     probe = Ridge(alpha=alpha)
     probe.fit(train_z, train_target)
+    if not label.endswith("_random"):
+        coef_path = f"probe_results/coefs/{meta['checkpoint']}_{label}.npy"
+        os.makedirs(os.path.dirname(coef_path), exist_ok=True)
+        np.save(coef_path, probe.coef_)
     r2 = r2_score(val_target, probe.predict(val_z))
 
     mi = float(mutual_info_regression(train_z, train_target, n_neighbors=3).sum())
@@ -74,7 +78,7 @@ def parse_model(model_path: str)-> dict:
     model_name = model_name.replace(".pt", "")
     
     model_components = model_name.split("_")[2:]
-    if "combined" or "combinedstratified" in model_components:
+    if "combined" in model_components or "combinedstratified" in model_components:
         flag = True
         k = int(model_components[1][1:])
         
@@ -103,6 +107,8 @@ if __name__ == "__main__":
     writer = csv.writer(csv_file)
     if write_header:
         writer.writerow(["checkpoint", "config", "latent_dim", "k", "target", "r2", "r2_shuffled", "delta", "mi_sum"])
+
+    os.makedirs("probe_results/coefs", exist_ok=True)
     
     model_paths = glob.glob(yaml_out["checkpointing"]["load_paths"])
     all_states, gravities, lengths = [], [], []

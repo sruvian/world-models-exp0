@@ -24,7 +24,7 @@ model:
 
 # Checkpointing
 checkpointing:
-  load_paths: "model_saves/*.pt"
+  load_paths: "model_saves/pendulum/*.pt"
 
 # Settings
 settings:
