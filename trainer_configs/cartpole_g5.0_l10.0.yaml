@@ -1,37 +1,37 @@
 # Environment
 environment:
-  run_env: True
+  run_env: false
   name: "CartPoleSim"
-  gravity: 9.8
+  gravity: 5.0
   mass1: 0.1
   mass2: 1.0
-  length: 1.0
-  dt: 0.02
+  length: 10.0
+  dt: 0.01
   max_action: 10.0
   damping: 0.0
-  seed: 42
+  seed: 44
 # Data Collection
 collector:
   num_trajectories: 50
   episode_time: 1000
   policy_seed: 35
-  save: True
+  save: false
 # Datasets
 datasets:
-  use_existing: False
+  use_existing: true
   paths:
-    - "datasets/v0_CartPoleSim_*.npz"
+    - "datasets/v0_CartPoleSim_*gravity5.000*_length10.000.npz"
 # Model
 model:
-  run_model: False
+  run_model: true
   name: WorldModel
   state_dim: 5
   action_dim: 1
   hidden_dim: 64
-  latent_dim: 8
+  latent_dim: 3
 # Trainer
 trainer:
-  run_trainer: False
+  run_trainer: true
   batch_size: 256
   steps: 100000
   log_interval: 100
@@ -45,12 +45,12 @@ hyperparams:
   optimizer: Adam
   loss: MSE
   lr: 0.001
-  rollout_steps: 1
+  rollout_steps: 5
   rollout_decay: "Linear"
   gamma: 0.9
 # Checkpointing
 checkpointing:
-  save: False
+  save: false
   save_path: "model_saves/"
   load: False
   load_path: null

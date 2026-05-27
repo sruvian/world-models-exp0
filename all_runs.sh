@@ -17,7 +17,7 @@ mkdir -p logs
 
 for CONFIG in "${CONFIGS[@]}"; do
   echo "Launching $CONFIG"
-  nohup python main.py --yaml configs/${CONFIG}.yaml > logs/${CONFIG}.log 2>&1 &
+  nohup python main.py --yaml trainer_configs/${CONFIG}.yaml > logs/${CONFIG}.log 2>&1 &
 done
 
 echo "All 10 jobs launched"
