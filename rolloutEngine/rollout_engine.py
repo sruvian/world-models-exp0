@@ -33,3 +33,14 @@ class RolloutEngine:
                 total_loss += self.loss(s_hat, states[:, k + 1, :])
         preds = torch.stack(preds, dim=1)
         return preds, total_loss
+
+
+    def get_latents(self, states: torch.Tensor, actions: torch.Tensor, horizon: int) -> torch.Tensor:
+        with torch.no_grad():
+            z = self.model.encode(states[:, 0, :])
+            latents = []
+            for k in range(horizon):
+                a_k = actions[:, k].unsqueeze(-1)
+                z = self.model.step(z, a_k)
+                latents.append(z)
+        return torch.stack(latents, dim=1)

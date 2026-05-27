@@ -3,7 +3,7 @@ import numpy as np
 
 class CartPoleSim():
 
-    def __init__(self, gravity: float, mass1: float, mass2: float,length:float, dt: float, max_action: float, damping: float, seed: int ) -> None:
+    def __init__(self, gravity: float, mass1: float, mass2: float, length: float, dt: float, max_action: float, damping: float, seed: int ) -> None:
         
         self.gravity = gravity
         self.mass1 = mass1
