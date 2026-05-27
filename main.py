@@ -36,12 +36,14 @@ if __name__=="__main__":
     device = yaml_out["settings"]["device"]
     trained_model = None
     states, actions = None, None
+    matched_files = []
     if yaml_out["datasets"]["use_existing"]:
 
         all_states, all_actions, all_metadata, config_sizes = [], [], [], []
         for pattern in yaml_out["datasets"]["paths"]:
             for path in glob.glob(pattern):
                     data = np.load(path)
+                    matched_files.append(path)
                     all_states.append(data["states"])
                     all_actions.append(data["actions"])
                     config_sizes.append(data["states"].shape[0])
@@ -65,7 +67,7 @@ if __name__=="__main__":
 
     if model_config["run_model"] and trainer_config["run_trainer"]:
         
-        model = make_model(model_config["name"], **model_params)
+        model = make_model(model_config["name"], **model_params).to(device)
 
         if hyperparams_config["optimizer"] not in opts:
             raise ValueError("Supports Adam and SGD")
@@ -76,9 +78,8 @@ if __name__=="__main__":
         if states is None or actions is None:
             raise ValueError("Run the collector or use an existing dataset")
         paths = yaml_out["datasets"]["paths"]
-        is_combined = yaml_out["datasets"]["use_existing"] and (
-            len(paths) > 1 or "*" in paths[0]
-        )
+        is_combined = yaml_out["datasets"]["use_existing"] and len(matched_files) > 1
+
         config_tag = "combined" if is_combined else f"g{env_config['gravity']}_l{env_config.get('length', 0.0)}"
         # if config_tag == "combined":
         #     train_s, train_s_next, train_a, val_s, val_s_next, val_a = stratified_split_gen(states, actions, hyperparams_config["rollout_steps"], device)
