@@ -51,7 +51,8 @@ def generate_trajectories(env_confs, collector, action):
                                         collector["num_trajectories"],
                                         collector["episode_time"],
                                         collector["policy_seed"],
-                                        collector["save"]
+                                        collector["save"],
+                                        collector["impulse_policy"]
                                     )
         
     else:
@@ -69,7 +70,8 @@ def generate_trajectories(env_confs, collector, action):
                                         collector["num_trajectories"],
                                         collector["episode_time"],
                                         collector["policy_seed"],
-                                        collector["save"]
+                                        collector["save"],
+                                        collector["impulse_policy"]
                                     )
             all_states.append(states)
             all_actions.append(actions)
@@ -84,6 +86,7 @@ if __name__ == "__main__":
     args.add_argument("--models_dir", type=Path, default=None)
     args.add_argument("--model_pt", type=Path, default=None)
     args.add_argument("--top_dir", type=Path, required=True)
+    args.add_argument("--impulse_policy", action="store_true", default = False)
     parser = args.parse_args()
 
     pt_files: list[Path] = []
@@ -99,10 +102,20 @@ if __name__ == "__main__":
         else:
             raise ValueError(f"Path does not exist: {parser.model_pt}")
         
+    if parser.impulse_policy:
+        temp_files = []
+        for file in pt_files:
+            if "impulse_policy" in str(file):
+                temp_files.append(file)
+        pt_files = temp_files
+        
     top_dir = parser.top_dir
+    if parser.impulse_policy:
+        top_dir = os.path.join(top_dir, "impulse_policy")
     os.makedirs(top_dir, exist_ok=True)
     environment_actions = [0, 0.5, 5, 10, 15, 20, 30, 50]
     horizons = [50, 500, 5000]
+    
 
     csv_path = Path(f"{top_dir}/pendulum_rollout_meta.csv")
     csv_path.parent.mkdir(parents=True, exist_ok=True)
@@ -123,7 +136,8 @@ if __name__ == "__main__":
                 "num_trajectories": 1,
                 "episode_time": 5001,
                 "policy_seed": 35,
-                "save": False
+                "save": False,
+                "impulse_policy" : parser.impulse_policy
                 }
 
     for file in pt_files:

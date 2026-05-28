@@ -5,3 +5,4 @@ datasets/
 logfiles/
 rollout_plots/
 probe_results/
+visualiser/simple_eda.py

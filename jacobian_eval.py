@@ -98,7 +98,8 @@ COLLECTOR = {
         "num_trajectories": 5,
         "episode_time": 1000,
         "policy_seed": 35,
-        "save": False
+        "save": False,
+        "impulse_policy": False
     }
 
 
@@ -114,6 +115,7 @@ def collect_for_config(g: float, l: float) -> tuple:
         COLLECTOR["episode_time"],
         COLLECTOR["policy_seed"],
         COLLECTOR["save"],
+        COLLECTOR["impulse_policy"]
     )
     return (torch.from_numpy(states).float(),
             torch.from_numpy(actions).float())
@@ -123,6 +125,7 @@ if __name__ == "__main__":
     args.add_argument("--models_dir", type=Path, default=None)
     args.add_argument("--model_pt",   type=Path, default=None)
     args.add_argument("--num_points", type=int,  default=50)
+    args.add_argument("--impulse_policy", action="store_true")
     parser = args.parse_args()
 
     pt_files: list[Path] = []
@@ -132,7 +135,13 @@ if __name__ == "__main__":
     if parser.model_pt:
         pt_files.append(parser.model_pt)
 
-    csv_path = Path(f"probe_results/jacobian_results_{parser.num_points}.csv")
+    COLLECTOR["impulse_policy"] = parser.impulse_policy
+
+    tag = "noise"
+    if COLLECTOR["impulse_policy"]:
+        tag = "sparse"
+
+    csv_path = Path(f"probe_results/jacobian_results_{parser.num_points}_{tag}.csv")
     csv_path.parent.mkdir(parents = True, exist_ok = True)
     write_header = not csv_path.exists()
     csv_file = open(csv_path, "a", newline = "")

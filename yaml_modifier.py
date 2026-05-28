@@ -3,10 +3,10 @@ import glob
 import os
 import argparse
 
-SKIP_FILES = {"pendulum.yaml", "pendulum_test.yaml", "cartpole.yaml"}
+SKIP_FILES = {"pendulum.yaml", "pendulum_test.yaml",}
 
 CHANGES = {
-    "hyperparams.rollout_steps": 50,
+    # "hyperparams.rollout_steps": 50,
     # "hyperparams.rollout_decay": "Linear",
     # "datasets.use_existing": True,
     # "model.run_model": True,
@@ -16,6 +16,8 @@ CHANGES = {
     # "checkpointing.load": False,
     # "rollout_engine.run_rollouts": False,
     # "model.latent_dim": 32,
+    "collector.save": True,
+    "collector.impulse_policy": True
 }
 
 def set_nested(config, dotted_key, value):
@@ -23,7 +25,7 @@ def set_nested(config, dotted_key, value):
     d = config
     for k in keys[:-1]:
         d = d[k]
-    old = d[keys[-1]]
+    old = d.get(keys[-1], "__missing__")
     d[keys[-1]] = value
     return old
 
@@ -39,10 +41,23 @@ def patch_yaml_inplace(path, changes):
     for dotted_key, new_val in changes.items():
         try:
             old_val = set_nested(config, dotted_key, new_val)
+            if old_val == "__missing__":
+                # find the parent section and append after its last key
+                section = dotted_key.split(".")[-2]
+                leaf = dotted_key.split(".")[-1]
+                for i, line in enumerate(lines):
+                    if line.strip() == f"{section}:":
+                        # find end of this section
+                        j = i + 1
+                        while j < len(lines) and (lines[j].startswith(" ") or lines[j].strip() == ""):
+                            j += 1
+                        indent = "  "  # assume 2-space indent
+                        lines.insert(j, f"{indent}{leaf}: {format_val(new_val)}\n")
+                        break
             edits.append((dotted_key.split(".")[-1], old_val, new_val))
         except KeyError as e:
-            print(f"  WARNING: key not found {e}")
-            continue  # add this
+            print(f"  WARNING: parent section not found {e}")
+            continue
 
     for i, line in enumerate(lines):
         for leaf_key, old_val, new_val in edits:

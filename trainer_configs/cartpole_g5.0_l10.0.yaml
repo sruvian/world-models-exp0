@@ -15,7 +15,8 @@ collector:
   num_trajectories: 50
   episode_time: 1000
   policy_seed: 35
-  save: false
+  save: true
+  impulse_policy: true
 # Datasets
 datasets:
   use_existing: true
@@ -50,7 +51,7 @@ hyperparams:
   gamma: 0.9
 # Checkpointing
 checkpointing:
-  save: false
+  save: true
   save_path: "model_saves/"
   load: False
   load_path: null

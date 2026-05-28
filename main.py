@@ -59,7 +59,7 @@ if __name__=="__main__":
         environment = make_env(env_config["name"], **env_params)
         print(f"[COLLECTOR] {collector_config['num_trajectories']} trajectories x {collector_config['episode_time']} steps")
         states, actions, metadata = collect_trajectories(environment, collector_config["num_trajectories"], collector_config["episode_time"],
-                                        collector_config["policy_seed"], collector_config["save"])
+                                        collector_config["policy_seed"], collector_config["save"], collector_config["impulse_policy"])
         all_metadata.append(metadata)
 
     model_params = {k: v for k, v in model_config.items() 
@@ -95,7 +95,10 @@ if __name__=="__main__":
                                 hyperparams_config["rollout_decay"], hyperparams_config["gamma"], trainer_config["log_interval"])
         logger.finish()
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        log_dir = os.path.join(base_dir, "logfiles")
+        if collector_config["impulse_policy"]:
+            log_dir = os.path.join(base_dir, "logfiles/impulse_policy")
+        else:   
+            log_dir = os.path.join(base_dir, "logfiles")
         
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
@@ -106,9 +109,11 @@ if __name__=="__main__":
         logger.save(log_path, yaml_out["datasets"]["use_existing"], yaml_out["datasets"]["paths"])
 
         if yaml_out["checkpointing"]["save"]:
-            os.makedirs(yaml_out["checkpointing"]["save_path"], exist_ok=True)
+            model_save_path = yaml_out["checkpointing"]["save_path"]
+            if collector_config["impulse_policy"]:
+                model_save_path = os.path.join(model_save_path, "impulse_policy") 
             checkpoint_path = os.path.join(
-                yaml_out["checkpointing"]["save_path"],
+                model_save_path,
                 f"model_{model_config['name']}_{config_tag}"
                 f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
                 f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}.pt"

@@ -45,7 +45,7 @@ def run_probe(train_z: np.ndarray, val_z: np.ndarray,
     probe = Ridge(alpha=alpha)
     probe.fit(train_z, train_target)
     if not label.endswith("_random"):
-        coef_path = f"probe_results/coefs/{meta['checkpoint']}_{label}.npy"
+        coef_path = f"probe_results/coefs/{meta['checkpoint']}_{label}_{meta['tag']}.npy"
         os.makedirs(os.path.dirname(coef_path), exist_ok=True)
         np.save(coef_path, probe.coef_)
     r2 = r2_score(val_target, probe.predict(val_z))
@@ -100,7 +100,11 @@ if __name__ == "__main__":
     with open(parser.yaml, 'r') as f:
         yaml_out = yaml.safe_load(f)
 
+    impulse_policy = yaml_out["collector"]["impulse_policy"]
+
     output_csv = yaml_out["probe"]["output_csv"]
+    if impulse_policy:
+        output_csv = output_csv[:-4]+"_impulse.csv"
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)
     write_header = not os.path.exists(output_csv)
     csv_file = open(output_csv, 'a', newline='')
@@ -150,7 +154,8 @@ if __name__ == "__main__":
                                             collector_config["num_trajectories"],
                                             collector_config["episode_time"],
                                             collector_config["policy_seed"],
-                                            collector_config["save"])
+                                            collector_config["save"],
+                                            collector_config["impulse_policy"])
             probe_states = torch.from_numpy(raw_states).float()
             targets = {
                 "theta": torch.atan2(probe_states[:,:,1], probe_states[:,:,0]),
@@ -177,11 +182,16 @@ if __name__ == "__main__":
         train_z_rand_np = train_z_rand.numpy()
         val_z_rand_np = val_z_rand.numpy()
 
+        tag = "noise"
+        if impulse_policy:
+            tag = "sparse"
+
         meta = {
             "checkpoint": os.path.basename(path),
             "config": current_config["config"],
             "latent": current_config["latent"],
-            "k": current_config["k"]
+            "k": current_config["k"],
+            "policy": tag
         }
 
         print(f"\n[{meta['checkpoint']}]")

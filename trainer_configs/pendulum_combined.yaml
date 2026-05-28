@@ -14,8 +14,9 @@ collector:
   num_trajectories: 500
   episode_time: 1000
   policy_seed: 35
-  save: False
+  save: true
   
+  impulse_policy: true
 datasets:
   use_existing: True
   paths:
@@ -55,7 +56,7 @@ hyperparams:
   
 
 checkpointing:
-  save: True
+  save: true
   save_path: "model_saves/"
   load: False
   load_path: null
