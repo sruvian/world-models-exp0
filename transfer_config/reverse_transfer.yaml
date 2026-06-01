@@ -1,0 +1,40 @@
+protocol: "B"  # or "A"
+
+pendulum_model:
+  name: "WorldModel"
+  state_dim: 3
+  action_dim: 1
+  hidden_dim: 64
+  latent_dim: 16
+  model_path: "model_saves/pendulum/model_WorldModel_combined_k15_Linear_steps100000_latent16.pt"
+
+transfer:
+  latent_angular: 16
+  latent_B: 8
+  hidden_dim: 64
+  action_dim: 1
+
+pendulum_eval_env:
+  name: "PendulumSim"
+  gravity: 9.8
+  mass1: 1.0
+  mass2: 0.0
+  length: 10.0
+  dt: 0.01
+  max_action: 10.0
+  damping: 0.0
+  seed: 77
+
+collector:
+  episode_time: 1000
+  policy_seed: 35
+  save: false
+  impulse_policy: false
+
+checkpointing:
+  load_path: "model_saves/protocol_b/model_ProtocolB_g9.8_l10.0_N100_k5_latentA16_latentB8_steps100000.pt"
+
+settings:
+  device: "cpu"
+
+baseline: false

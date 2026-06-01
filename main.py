@@ -52,9 +52,9 @@ if __name__=="__main__":
         states = np.concatenate(all_states, axis=0)
         actions = np.concatenate(all_actions, axis=0)
         
-    elif env_config["run_env"]:
+    else:
         all_metadata = []
-        env_params = {k: v for k, v in env_config.items() if k not in ("name", "run_env")}
+        env_params = {k: v for k, v in env_config.items() if k not in ("name")}
         print(f"[ENV] {env_config['name']} | g={env_config['gravity']} | l={env_config.get('length', 0.0)}")
         environment = make_env(env_config["name"], **env_params)
         print(f"[COLLECTOR] {collector_config['num_trajectories']} trajectories x {collector_config['episode_time']} steps")
@@ -131,7 +131,7 @@ if __name__=="__main__":
         else:
             raise ValueError("Rollout requested but no model available — set load: true or run_trainer: true")
         
-        env_params = {k: v for k, v in env_config.items() if k not in ("name", "run_env")}
+        env_params = {k: v for k, v in env_config.items() if k not in ("name")}
         if "max_action" in env_params:
             env_params["max_action"] = 0.0
         environment = make_env(env_config["name"], **env_params)

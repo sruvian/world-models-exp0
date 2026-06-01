@@ -8,20 +8,22 @@ import glob
 import csv
 import yaml
 import argparse
+from pathlib import Path
 from models import make_model
 from collector.collect import collect_trajectories
+from models.transfer import ProtocolAModel, ProtocolBModel
 from models.wmodel import WorldModel
 from sim_envs.envs import make_env
+from utils import parse_model
+from models.simplenn import SimpleNN
 
-
-def generate_latents(model: WorldModel, states: torch.Tensor) -> torch.Tensor:
-    z_states = []
+def generate_latents(model, states: torch.Tensor) -> torch.Tensor:
     model.eval()
     with torch.no_grad():
-        for state in states:
-            latent = model.encode(state)
-            z_states.append(latent)
-    return torch.stack(z_states)
+        N, T, state_dim = states.shape
+        flat = states.reshape(-1, state_dim)
+        z = model.encode(flat)
+        return z.reshape(N, T, -1)
 
 
 def train_val_split(states: torch.Tensor, z_states: torch.Tensor | None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -40,12 +42,12 @@ def train_val_split(states: torch.Tensor, z_states: torch.Tensor | None) -> tupl
 
 def run_probe(train_z: np.ndarray, val_z: np.ndarray,
               train_target: np.ndarray, val_target: np.ndarray,
-              label: str, writer, meta: dict, alpha: float) -> tuple[float, float, float]:
+              label: str, writer, meta: dict, alpha: float, probe_path: str) -> tuple[float, float, float]:
     
     probe = Ridge(alpha=alpha)
     probe.fit(train_z, train_target)
     if not label.endswith("_random"):
-        coef_path = f"probe_results/coefs/{meta['checkpoint']}_{label}_{meta['tag']}.npy"
+        coef_path = f"{probe_path}/{meta['checkpoint']}_{label}_{meta['policy']}.npy"
         os.makedirs(os.path.dirname(coef_path), exist_ok=True)
         np.save(coef_path, probe.coef_)
     r2 = r2_score(val_target, probe.predict(val_z))
@@ -68,28 +70,6 @@ def run_probe(train_z: np.ndarray, val_z: np.ndarray,
 
     return r2, r2_shuffled, mi
 
-def parse_model(model_path: str)-> dict:
-    flag = False
-    g, l = 0.0, 0.0
-    latent = 0
-    k = 0
-
-    model_name = os.path.basename(model_path)
-    model_name = model_name.replace(".pt", "")
-    
-    model_components = model_name.split("_")[2:]
-    if "combined" in model_components or "combinedstratified" in model_components:
-        flag = True
-        k = int(model_components[1][1:])
-        
-    else:
-        g = float(model_components[0][1:])
-        l = float(model_components[1][1:])
-        k = int(model_components[2][1:])
-
-    latent = int(model_components[-1][6:])
-    config = "combined" if flag else f"g{g}_l{l}"
-    return {"flag": flag, "g": g, "l": l, "latent": latent, "k": k, "config": config}
 
 
 if __name__ == "__main__":
@@ -103,8 +83,11 @@ if __name__ == "__main__":
     impulse_policy = yaml_out["collector"]["impulse_policy"]
 
     output_csv = yaml_out["probe"]["output_csv"]
+    
+    tag = "noise"
     if impulse_policy:
-        output_csv = output_csv[:-4]+"_impulse.csv"
+        tag = "sparse"
+    output_csv = output_csv[:-4]+f"_{tag}.csv"
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)
     write_header = not os.path.exists(output_csv)
     csv_file = open(output_csv, 'a', newline='')
@@ -112,36 +95,53 @@ if __name__ == "__main__":
     if write_header:
         writer.writerow(["checkpoint", "config", "latent_dim", "k", "target", "r2", "r2_shuffled", "delta", "mi_sum"])
 
-    os.makedirs("probe_results/coefs", exist_ok=True)
     
+    
+    env_name = yaml_out["environment"]["name"]
+    is_cartpole = (env_name == "CartPoleSim")
+    
+    if is_cartpole:
+        probe_path = f"probe_results/coefs_cartpole_{tag}"
+        
+    else:
+        probe_path = f"probe_results/coefs_pendulum_{tag}"
+    os.makedirs(probe_path, exist_ok=True)
     model_paths = glob.glob(yaml_out["checkpointing"]["load_paths"])
     all_states, gravities, lengths = [], [], []
-    for data_path in glob.glob("datasets/*.npz"):
-        data = np.load(data_path)
-        states = data["states"][:yaml_out["collector"]["num_trajectories"]]
-        gravity = float(data["gravity"])
-        length = float(data["length"])
-        all_states.append(states)
-        gravities.append(np.full((states.shape[0], states.shape[1]), gravity))
-        lengths.append(np.full((states.shape[0], states.shape[1]), length))
-
-    combined_states = torch.from_numpy(np.concatenate(all_states, axis=0)).float()
-    gravity_tensor = torch.from_numpy(np.concatenate(gravities, axis=0)).float()
-    length_tensor = torch.from_numpy(np.concatenate(lengths, axis=0)).float()
     
     model_config = yaml_out["model"]
     model_params = {k: v for k, v in model_config.items()
             if k not in ("name")}
     for path in model_paths:
-        current_config = parse_model(path)
+        current_config = parse_model(Path(path))
         if current_config["flag"]:
-            probe_states = combined_states  # just reference, no reassignment
-            targets = {
-                "theta": torch.atan2(probe_states[:,:,1], probe_states[:,:,0]),
-                "theta_dot": probe_states[:,:,2],
-                "gravity": gravity_tensor,
-                "length": length_tensor,
-            }
+            all_states, gravities, lengths = [], [], []
+            dataset_glob = yaml_out["datasets"]["paths"][0]
+            for data_path in glob.glob(dataset_glob):
+                data = np.load(data_path)
+                all_states.append(data["states"][:yaml_out["collector"]["num_trajectories"]])
+                gravities.append(np.full((all_states[-1].shape[0], all_states[-1].shape[1]), float(data["gravity"])))
+                lengths.append(np.full((all_states[-1].shape[0], all_states[-1].shape[1]), float(data["length"])))
+            probe_states = torch.from_numpy(np.concatenate(all_states, axis=0)).float()
+            gravity_tensor = torch.from_numpy(np.concatenate(gravities, axis=0)).float()
+            length_tensor = torch.from_numpy(np.concatenate(lengths, axis=0)).float()
+            if is_cartpole:
+                targets = {
+                    "theta": torch.atan2(probe_states[:,:,1], probe_states[:,:,0]),
+                    "theta_dot": probe_states[:,:,2],
+                    "x": probe_states[:,:,3],
+                    "x_dot": probe_states[:,:,4],
+                    "gravity": gravity_tensor,
+                    "length": length_tensor,
+                }
+            else:
+                targets = {
+                    "theta": torch.atan2(probe_states[:,:,1], probe_states[:,:,0]),
+                    "theta_dot": probe_states[:,:,2],
+                    "gravity": gravity_tensor,
+                    "length": length_tensor,
+                }
+            
 
         else:
             collector_config = yaml_out["collector"]
@@ -157,34 +157,73 @@ if __name__ == "__main__":
                                             collector_config["save"],
                                             collector_config["impulse_policy"])
             probe_states = torch.from_numpy(raw_states).float()
-            targets = {
-                "theta": torch.atan2(probe_states[:,:,1], probe_states[:,:,0]),
-                "theta_dot": probe_states[:,:,2],
-                "gravity": torch.full((probe_states.shape[0], probe_states.shape[1]), current_config["g"]),
-                "length": torch.full((probe_states.shape[0], probe_states.shape[1]), current_config["l"]),
-            }
+            if is_cartpole:
+                targets = {
+                    "theta": torch.atan2(probe_states[:,:,1], probe_states[:,:,0]),
+                    "theta_dot": probe_states[:,:,2],
+                    "x": probe_states[:,:,3],
+                    "x_dot": probe_states[:,:,4],
+                    "gravity": torch.full((probe_states.shape[0], probe_states.shape[1]), current_config["g"]),
+                    "length": torch.full((probe_states.shape[0], probe_states.shape[1]), current_config["l"]),
+                }
+            else:
+                targets = {
+                    "theta": torch.atan2(probe_states[:,:,1], probe_states[:,:,0]),
+                    "theta_dot": probe_states[:,:,2],
+                    "gravity": torch.full((probe_states.shape[0], probe_states.shape[1]), current_config["g"]),
+                    "length": torch.full((probe_states.shape[0], probe_states.shape[1]), current_config["l"]),
+                }
         model_params["latent_dim"] = current_config["latent"]
-        model = make_model(model_config["name"], **model_params)
-        model.load_state_dict(torch.load(path))
-        random_model = make_model(model_config["name"], **model_params)
-        
+        if current_config["protocol"] is not None:
+            
+            latent_angular = current_config["latent"]
+            latent_B = current_config["latent_B"]
+            hidden_dim = model_params.get("hidden_dim", 64)
+            action_dim = model_params.get("action_dim", 1)
+            
+            if current_config["protocol"] == "B":
+                angular_encoder = SimpleNN(3, hidden_dim, latent_angular)
+                cartpole_encoder = SimpleNN(2, hidden_dim, latent_B)
+                model = ProtocolBModel(
+                    angular_encoder=angular_encoder,
+                    cartpole_encoder=cartpole_encoder,
+                    latent_angular=latent_angular,
+                    latent_B=latent_B,
+                    action_dim=action_dim,
+                    hidden_dim=hidden_dim
+                )
+            elif current_config["protocol"] == "A":
+                unified_encoder = SimpleNN(5, hidden_dim, latent_angular)
+                model = ProtocolAModel(
+                    unified_encoder=unified_encoder,
+                    latent_angular=latent_angular,
+                    action_dim=action_dim,
+                    hidden_dim=hidden_dim
+                )
+            model.load_state_dict(torch.load(path))
+            random_model = None 
+        else:
+            model_params["latent_dim"] = current_config["latent"]
+            model = make_model(model_config["name"], **model_params)
+            model.load_state_dict(torch.load(path))
+            random_model = make_model(model_config["name"], **model_params)
+
+        train_z_rand_np = None
+        val_z_rand_np = None
+        if random_model is not None:
+            z_random = generate_latents(random_model, probe_states)
+            _, _, train_z_rand, val_z_rand = train_val_split(probe_states, z_random)
+            train_z_rand_np = train_z_rand.numpy()
+            val_z_rand_np = val_z_rand.numpy()
+                
 
         z_states = generate_latents(model, probe_states)
-        z_random = generate_latents(random_model, probe_states)
-
         train_states, val_states, train_z, val_z = train_val_split(probe_states, z_states)
-        _, _, train_z_rand, val_z_rand = train_val_split(probe_states, z_random)
-
-        train_states_np = train_states.numpy()
-        val_states_np = val_states.numpy()
         train_z_np = train_z.numpy()
         val_z_np = val_z.numpy()
-        train_z_rand_np = train_z_rand.numpy()
-        val_z_rand_np = val_z_rand.numpy()
+        
 
-        tag = "noise"
-        if impulse_policy:
-            tag = "sparse"
+        
 
         meta = {
             "checkpoint": os.path.basename(path),
@@ -200,15 +239,16 @@ if __name__ == "__main__":
             train_target, val_target, _, _ = train_val_split(target.unsqueeze(-1), None)
             train_target_np = train_target.numpy().ravel()
             val_target_np = val_target.numpy().ravel()
-            run_probe(train_z_np, val_z_np, train_target_np, val_target_np, target_name, writer, meta, yaml_out["probe"]["alpha"])
+            run_probe(train_z_np, val_z_np, train_target_np, val_target_np, target_name, writer, meta, yaml_out["probe"]["alpha"], probe_path)
 
-        print("=== Random Model Baseline ===")
-        for target_name, target in targets.items():
-            train_target, val_target, _, _ = train_val_split(target.unsqueeze(-1), None)
-            train_target_np = train_target.numpy().ravel()
-            val_target_np = val_target.numpy().ravel()
-            run_probe(train_z_rand_np, val_z_rand_np, train_target_np, val_target_np, 
-                    f"{target_name}_random", writer, meta, yaml_out["probe"]["alpha"])
+        if random_model is not None:
+            print("=== Random Model Baseline ===")
+            for target_name, target in targets.items():
+                train_target, val_target, _, _ = train_val_split(target.unsqueeze(-1), None)
+                train_target_np = train_target.numpy().ravel()
+                val_target_np = val_target.numpy().ravel()
+                run_probe(train_z_rand_np, val_z_rand_np, train_target_np, val_target_np,
+                        f"{target_name}_random", writer, meta, yaml_out["probe"]["alpha"], probe_path)
 
         csv_file.flush()
     csv_file.close()

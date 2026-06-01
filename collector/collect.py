@@ -59,9 +59,13 @@ def collect_trajectories(env, num_trajectories: int, episode_time: int, policy_s
     actions = []
     policy = None
 
-    max_action = getattr(env, 'max_torque', getattr(env, 'max_force', 1.0))
+    max_action = env.max_action
     if impulse_policy:
-        T = 2 * np.pi * np.sqrt(env.length / env.gravity)
+        if env.mass2> 0:
+            T = 2 * np.pi * np.sqrt((env.mass2 * env.length) / 
+                             ((env.mass2 + env.mass1) * env.gravity))
+        else:
+            T = 2 * np.pi * np.sqrt(env.length / env.gravity)
         min_gap = 0.05 * T
         max_gap = 0.15 * T
         policy = SparseImpulsePolicy(max_action, getattr(env, 'dt', 0.01), min_gap, max_gap, min_duration, max_duration, policy_seed)

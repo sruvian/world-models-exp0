@@ -14,26 +14,26 @@ collector:
   num_trajectories: 500
   episode_time: 1000
   policy_seed: 35
-  save: true
-  
+  save: false
   impulse_policy: true
+
 datasets:
-  use_existing: True
+  use_existing: true
   paths:
-    - "datasets/v0_PendulumSim_*grav9.80*length2.0.npz"
+    - "datasets/impulse_policy/v0_PendulumSim_*gravity9.80*length2.0*.npz"
 
 # Model Parameterrs
 model:
-  run_model: True
+  run_model: true
   name: WorldModel
   state_dim: 3
   action_dim: 1
   hidden_dim: 64
-  latent_dim: 8
+  latent_dim: 64
 
 # Training and Testing Parameters
 trainer:
-  run_trainer: True
+  run_trainer: true
   batch_size: 256
   steps: 100000
   log_interval: 100
@@ -52,7 +52,7 @@ hyperparams:
   lr: 0.001
   rollout_decay: "Linear"
   gamma: 0.9
-  rollout_steps: 50
+  rollout_steps: 15
   
 
 checkpointing:

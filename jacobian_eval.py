@@ -10,24 +10,9 @@ from models import make_model
 from rolloutEngine import RolloutEngine
 from sim_envs.envs import make_env
 from collector import collect_trajectories
+from utils import parse_model
 
-def parse_model(path: Path) -> dict:
-    flag = False
-    g, l = 0.0, 0.0
-    latent = 0
-    k = 0
-    name = path.stem
-    components = name.split("_")[2:]
-    if "combined" in components:
-        flag = True
-        k = int(components[1][1:])
-    else:
-        g = float(components[0][1:])
-        l = float(components[1][1:])
-        k = int(components[2][1:])
-    latent = int(components[-1][6:])
-    config = "combined" if flag else f"g{g}_l{l}"
-    return {"flag": flag, "g": g, "l": l, "latent": latent, "k": k, "name": config}
+
 
 def compute_jacobian(model, z: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
     z = z.detach().requires_grad_(True)
@@ -47,14 +32,20 @@ def action_jacobian(model, z, a):
         J_a[i] = grad.detach()
     return J_a
 
-def jacobian_stats(J: torch.Tensor, g: float, l: float, dt: float = 0.01) -> dict:
+def jacobian_stats(J: torch.Tensor, g: float, l: float, dt: float = 0.01, env = "PendulumSim") -> dict:
     eigenvalues = torch.linalg.eigvals(J)
     magnitudes = eigenvalues.abs()
     phases = torch.angle(eigenvalues)
 
     _, S, _ = torch.linalg.svd(J)
 
-    expected_phase = float(np.sqrt(g / l) * dt)
+    if env == "CartPoleSim":
+        expected_phase = np.sqrt((1.1 *g) / (1.0 * l)) * dt
+        phase_error = round(float(abs(phases.abs().mean().item() - expected_phase)), 6)
+    
+    else:
+        expected_phase = float(np.sqrt(g / l)  * dt)
+        phase_error = float(abs(phases.abs().mean().item() - expected_phase))
 
     return {
         "max_eig":          round(float(magnitudes.max()), 6),
@@ -79,7 +70,7 @@ def jacobian_stats(J: torch.Tensor, g: float, l: float, dt: float = 0.01) -> dic
 
         "expected_phase":   round(expected_phase, 6),
 
-        "phase_error":      round(float(abs(phases.abs().mean().item() - expected_phase)), 6),
+        "phase_error":      phase_error, 
 
         "g_over_l":         round(g / l, 6),
     }
@@ -103,22 +94,28 @@ COLLECTOR = {
     }
 
 
-def collect_for_config(g: float, l: float) -> tuple:
-    env = make_env("PendulumSim",
-        gravity = g, mass1 = 1.0, mass2 = 0.0,
-        length = l, dt = 0.01,
-        max_action = 10.0, damping = 0.0, seed = 100
-    )
+def collect_for_config(g: float, l: float, env: str) -> tuple:
+    if env == "CartPoleSim":
+        environment = make_env("CartPoleSim",
+            gravity=g, mass1=0.1, mass2=1.0,
+            length=l, dt=0.02,
+            max_action=10.0, damping=0.0, seed=100
+        )
+    else:
+        environment = make_env("PendulumSim",
+            gravity=g, mass1=1.0, mass2=0.0,
+            length=l, dt=0.01,
+            max_action=10.0, damping=0.0, seed=100
+        )
     states, actions, _ = collect_trajectories(
-        env,
+        environment,
         COLLECTOR["num_trajectories"],
         COLLECTOR["episode_time"],
         COLLECTOR["policy_seed"],
         COLLECTOR["save"],
         COLLECTOR["impulse_policy"]
     )
-    return (torch.from_numpy(states).float(),
-            torch.from_numpy(actions).float())
+    return torch.from_numpy(states).float(), torch.from_numpy(actions).float()
 
 if __name__ == "__main__":
     args = argparse.ArgumentParser()
@@ -140,8 +137,8 @@ if __name__ == "__main__":
     tag = "noise"
     if COLLECTOR["impulse_policy"]:
         tag = "sparse"
-
-    csv_path = Path(f"probe_results/jacobian_results_{parser.num_points}_{tag}.csv")
+    env_tag = "cartpole" if "cartpole" in str(parser.models_dir).lower() else "pendulum"
+    csv_path = Path(f"probe_results/jacobian_results_{env_tag}_{parser.num_points}_{tag}.csv")
     csv_path.parent.mkdir(parents = True, exist_ok = True)
     write_header = not csv_path.exists()
     csv_file = open(csv_path, "a", newline = "")
@@ -164,9 +161,10 @@ if __name__ == "__main__":
     for file in pt_files:
         config = parse_model(file)
         print(f"\n[{file.name}]")
+        state_dim = 5 if config["env"] == "CartPoleSim" else 3
 
         model_params = {
-            "state_dim": 3, "action_dim": 1,
+            "state_dim": state_dim, "action_dim": 1,
             "hidden_dim": 64, "latent_dim": config["latent"]
         }
         model = make_model("WorldModel", **model_params)
@@ -179,7 +177,7 @@ if __name__ == "__main__":
             eval_configs = [(config["g"], config["l"])]
         
         for g_eval, l_eval in eval_configs:
-            states_t, actions_t = collect_for_config(g_eval, l_eval)
+            states_t, actions_t = collect_for_config(g_eval, l_eval, config["env"])
             is_ood = (g_eval, l_eval) not in ALL_CONFIGS
             all_stats = []
             for _ in range(parser.num_points):
@@ -193,7 +191,7 @@ if __name__ == "__main__":
                     J_s = compute_jacobian(model, z, a)
                     J_a = action_jacobian(model, z, a)
 
-                stats = jacobian_stats(J_s, g_eval, l_eval)
+                stats = jacobian_stats( J_s, g_eval, l_eval, env = config["env"])
                 stats["j_a_max"] = round(float(J_a.abs().max()), 6)
                 stats["j_a_mean"] = round(float(J_a.abs().mean()), 6)
                 stats["j_a_norm"] = round(float(torch.norm(J_a)), 6)
@@ -218,7 +216,7 @@ if __name__ == "__main__":
                   )
             
             writer.writerow([
-                file.name, config["name"], f"g{g_eval}_l{l_eval}",
+                file.name, config["config"], f"g{g_eval}_l{l_eval}",
                 config["latent"], config["k"],
                 avg["max_eig"], avg["min_eig"], avg["mean_eig"],
                 avg["unit_circle_frac"], avg["contracting_frac"], avg["expanding_frac"],

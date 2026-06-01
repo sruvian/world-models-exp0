@@ -3,7 +3,7 @@
 # Usage: bash run_experiments.sh
 
 YAML_DIR="trainer_configs/"
-LOG_DIR="logs/cartpole"
+LOG_DIR="logs/"
 mkdir -p $LOG_DIR
 
 run_batch() {
@@ -35,11 +35,11 @@ run_yaml_modifier() {
 }
 
 # ── Experiment grid ──────────────────────────────
-LATENTS=(3 8 16 32)
-K_VALUES=(1 5 15 50)
+LATENTS=(3 8 16 32 64)
+K_VALUES=(1 3 5 15 50)
 
-for latent in "${LATENTS[@]}"; do
-    for k in "${K_VALUES[@]}"; do
+for k in "${K_VALUES[@]}"; do
+    for latent in "${LATENTS[@]}"; do
         echo "==============================="
         echo "Running latent=$latent k=$k"
         echo "==============================="
@@ -48,7 +48,7 @@ for latent in "${LATENTS[@]}"; do
         run_yaml_modifier $latent $k
 
         # Step 2 — get all yamls
-        yamls=($(ls $YAML_DIR/cartpole_*.yaml))
+        yamls=($(ls $YAML_DIR/*.yaml))
 
         # Step 3 — run in batches of 5
         for ((i=0; i<${#yamls[@]}; i+=5)); do

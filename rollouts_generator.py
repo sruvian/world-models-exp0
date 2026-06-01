@@ -11,41 +11,30 @@ from rolloutEngine import RolloutEngine
 from sim_envs.envs import make_env
 from collector import collect_trajectories
 from scipy.fft import fft
+from utils import parse_model
 
-def parse_model(path: Path) -> dict:
-    flag = False
-    g, l = 0.0, 0.0
-    latent = 0
-    k = 0
-    name = path.stem
-    components = name.split("_")[2:]
-    if "combined" in components:
-        flag = True
-        k = int(components[1][1:])
+
+
+def generate_trajectories(env_confs, collector, action, env):
+    if env == "CartPoleSim":
+        base_config = {
+            "gravity": 0.0, "mass1": 0.1, "mass2": 1.0,
+            "length": 0.0, "dt": 0.01, "max_action": action,
+            "damping": 0.0, "seed": 80,
+        }
+        env_name = "CartPoleSim"
     else:
-        g = float(components[0][1:])
-        l = float(components[1][1:])
-        k = int(components[2][1:])
-    latent = int(components[-1][6:])
-    config = "combined" if flag else f"g{g}_l{l}"
-    return {"flag": flag, "g": g, "l": l, "latent": latent, "k": k, "name": config}
-
-
-def generate_trajectories(env_confs, collector, action):
-    environment_config = {
-            "gravity": 0.0,
-            "mass1": 1.0,
-            "mass2": 0,
-            "length": 0.0,
-            "dt" : 0.01,
-            "max_action": action,
-            "damping": 0.0,
-            "seed": 80,
-            }
+        base_config = {
+            "gravity": 0.0, "mass1": 1.0, "mass2": 0.0,
+            "length": 0.0, "dt": 0.01, "max_action": action,
+            "damping": 0.0, "seed": 80,
+        }
+        env_name = "PendulumSim"
+    environment_config = base_config
     if env_confs is not None:
         environment_config["gravity"] = env_confs[0]
         environment_config["length"] = env_confs[1]
-        environment = make_env("PendulumSim",**environment_config)
+        environment = make_env(env_name,**environment_config)
         states, actions, _ = collect_trajectories(
                                         environment,
                                         collector["num_trajectories"],
@@ -64,7 +53,7 @@ def generate_trajectories(env_confs, collector, action):
         for conf in all_configs:
             environment_config["gravity"] = conf[0]
             environment_config["length"] = conf[1]
-            environment = make_env("PendulumSim",**environment_config)
+            environment = make_env(env_name,**environment_config)
             states, actions, _ = collect_trajectories(
                                         environment,
                                         collector["num_trajectories"],
@@ -101,8 +90,10 @@ if __name__ == "__main__":
             pt_files.append(parser.model_pt)
         else:
             raise ValueError(f"Path does not exist: {parser.model_pt}")
-        
+    
+    policy_tag = "noise"
     if parser.impulse_policy:
+        policy_tag = "sparse"
         temp_files = []
         for file in pt_files:
             if "impulse_policy" in str(file):
@@ -117,16 +108,17 @@ if __name__ == "__main__":
     horizons = [50, 500, 5000]
     
 
-    csv_path = Path(f"{top_dir}/pendulum_rollout_meta.csv")
+    env_tag = "cartpole" if "cartpole" in str(parser.models_dir).lower() else "pendulum"
+    csv_path = Path(f"{top_dir}/{env_tag}_{policy_tag}_rollout_meta.csv")
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     write_header = not csv_path.exists()
     csv_file = open(csv_path, 'a', newline='')
     writer = csv.writer(csv_file)
     if write_header:
-        writer.writerow([
+       writer.writerow([
             "checkpoint", "latent_dim", "k", "gravity", "length",
             "horizon", "torque", "mse_loss", "valid_horizon",
-            "rmse_cos", "rmse_sin", "rmse_thetadot",
+            "rmse_cos", "rmse_sin", "rmse_thetadot", "rmse_x", "rmse_xdot",
             "freq_error", "latent_div"
         ])
 
@@ -143,16 +135,17 @@ if __name__ == "__main__":
     for file in pt_files:
         config = parse_model(file)
 
+        state_dim = 5 if config["env"] == "CartPoleSim" else 3
         model_params = {
-            "state_dim": 3, "action_dim": 1,
+            "state_dim": state_dim, "action_dim": 1,
             "hidden_dim": 64, "latent_dim": config["latent"]
-        }
+}
         model = make_model("WorldModel", **model_params)
         model.load_state_dict(torch.load(file))
         model.eval()
         model_dir = top_dir / f"latent{config['latent']}" / \
                     f"k{config['k']}" / \
-                    f"{config['name']}"
+                    f"{config['config']}"
         model_dir.mkdir(parents=True, exist_ok=True)
         
 
@@ -163,7 +156,7 @@ if __name__ == "__main__":
             env_confs = (config["g"], config["l"])
    
         for action in environment_actions:
-            states, actions = generate_trajectories(env_confs, collector, action)
+            states, actions = generate_trajectories(env_confs, collector, action, config["env"])
             for horizon in horizons:
                 roll_states = torch.from_numpy(states).float()
                 roll_actions = torch.from_numpy(actions).float()
@@ -199,19 +192,19 @@ if __name__ == "__main__":
                 l_label = config["l"] if not config["flag"] else "combined"    
 
                 
+                rmse_vals = [round(float(rmse[i]), 6) if i < len(rmse) else float('nan') for i in range(5)]
                 writer.writerow([
                     file.name, config["latent"], config["k"],
                     g_label, l_label, horizon, action,
                     round(roll_loss.item(), 6), valid_h,
-                    round(float(rmse[0]), 6),
-                    round(float(rmse[1]), 6),
-                    round(float(rmse[2]), 6),
+                    *rmse_vals,
                     freq_error, latent_div
                 ])
                 csv_file.flush()
 
-                labels = [r"$\cos\theta$", r"$\sin\theta$", r"$\dot\theta$"]
-                fig, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
+                all_labels = [r"$\cos\theta$", r"$\sin\theta$", r"$\dot\theta$", r"$x$", r"$\dot{x}$"]
+                labels = all_labels[:true_np.shape[1]]
+                fig, axes = plt.subplots(len(labels), 1, figsize=(12, 3*len(labels)), sharex=True)
                 for i, (ax, label) in enumerate(zip(axes, labels)):
                     ax.plot(true_np[:, i], label="True", linewidth=1.5)
                     ax.plot(pred_np[:, i], label="Pred",
@@ -235,5 +228,5 @@ if __name__ == "__main__":
 
                 plot_path = plot_dir / f"horizon{horizon}_torque{action}.png"
                 print(f"{plot_path}")
-                plt.savefig(plot_path, dpi=80)
+                plt.savefig(plot_path, dpi=60)
                 plt.close()

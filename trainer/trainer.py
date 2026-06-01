@@ -6,39 +6,47 @@ from logger.logger import Logger
 from models import WorldModel
 import tqdm
 
+from models.transfer import ProtocolAModel, ProtocolBModel
 
-def split_gen(states: np.ndarray | torch.Tensor, 
-              actions: np.ndarray | torch.Tensor, 
-              rollout:int = 1, device: str = "cpu") -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    
+
+def split_gen(states: np.ndarray | torch.Tensor,
+              actions: np.ndarray | torch.Tensor,
+              rollout: int = 1, device: str = "cpu",
+              windows_per_traj: int = 20) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+
+    if isinstance(states, torch.Tensor):
+        states = states.numpy()
+    if isinstance(actions, torch.Tensor):
+        actions = actions.numpy()
+
     N, T, state_dim = states.shape
+    all_states, all_actions, all_nxt = [], [], []
 
-    new_states, new_actions, new_nxt_states = [], [], []
-    start_idx = np.random.randint(0, T - rollout, size = N)
-    new_states = np.stack([states[i, start_idx[i]:start_idx[i]+rollout] for i in range(N)])
-    new_actions = np.stack([actions[i, start_idx[i]:start_idx[i]+rollout] for i in range(N)])
-    new_nxt_states = np.stack([states[i, start_idx[i]+1:start_idx[i]+rollout+1] for i in range(N)])
+    for i in range(N):
+        start_idxs = np.random.randint(0, T - rollout, size=windows_per_traj)
+        for s in start_idxs:
+            all_states.append(states[i, s:s+rollout])
+            all_actions.append(actions[i, s:s+rollout])
+            all_nxt.append(states[i, s+1:s+rollout+1])
 
-    new_states = np.array(new_states, dtype= np.float32)
-    new_actions = np.array(new_actions, dtype= np.float32)
-    new_nxt_states = np.array(new_nxt_states, dtype= np.float32)
+    all_states = np.array(all_states, dtype=np.float32)
+    all_actions = np.array(all_actions, dtype=np.float32)
+    all_nxt = np.array(all_nxt, dtype=np.float32)
 
-
-
-    M = new_states.shape[0]
+    M = all_states.shape[0]
     perm = np.random.permutation(M)
     train_idx = int(0.9 * M)
 
-    new_states = new_states[perm]
-    new_actions = new_actions[perm]
-    new_nxt_states = new_nxt_states[perm]
+    all_states = all_states[perm]
+    all_actions = all_actions[perm]
+    all_nxt = all_nxt[perm]
 
-    train_s      = torch.from_numpy(new_states[:train_idx]).float().to(device)
-    train_a      = torch.from_numpy(new_actions[:train_idx]).float().to(device)
-    train_s_next = torch.from_numpy(new_nxt_states[:train_idx]).float().to(device)
-    val_s        = torch.from_numpy(new_states[train_idx:]).float().to(device)
-    val_a        = torch.from_numpy(new_actions[train_idx:]).float().to(device)
-    val_s_next   = torch.from_numpy(new_nxt_states[train_idx:]).float().to(device)
+    train_s      = torch.from_numpy(all_states[:train_idx]).float().to(device)
+    train_a      = torch.from_numpy(all_actions[:train_idx]).float().to(device)
+    train_s_next = torch.from_numpy(all_nxt[:train_idx]).float().to(device)
+    val_s        = torch.from_numpy(all_states[train_idx:]).float().to(device)
+    val_a        = torch.from_numpy(all_actions[train_idx:]).float().to(device)
+    val_s_next   = torch.from_numpy(all_nxt[train_idx:]).float().to(device)
 
     return train_s, train_s_next, train_a, val_s, val_s_next, val_a
 
@@ -99,7 +107,7 @@ def trainer(
         val_states: torch.Tensor,
         val_next_states: torch.Tensor,
         val_actions: torch.Tensor,
-        model: WorldModel,
+        model: WorldModel | ProtocolAModel| ProtocolBModel,
         logger: Logger,
         optimizer: torch.optim.Optimizer,
         loss_func: torch.nn.Module,
@@ -108,7 +116,7 @@ def trainer(
         rollout_decay: str,
         gamma: float,
         log_interval: int
-)-> WorldModel:
+)-> WorldModel| ProtocolAModel| ProtocolBModel:
     
     rollout_func = partial(lin_dec, gamma=gamma) if rollout_decay == "Linear" else partial(exp_dec, gamma=gamma)
     num_samples = train_states.shape[0]
@@ -144,7 +152,7 @@ def trainer(
     return model
 
 
-def rollout_loss(model: WorldModel, states: torch.Tensor, actions: torch.Tensor, next_states: torch.Tensor, loss_func: torch.nn.Module, rollout_func: Callable, device: torch.device):
+def rollout_loss(model: WorldModel | ProtocolAModel| ProtocolBModel, states: torch.Tensor, actions: torch.Tensor, next_states: torch.Tensor, loss_func: torch.nn.Module, rollout_func: Callable, device: torch.device):
     K = states.shape[1]
     z = model.encode(states[:, 0, :])
     total_loss = torch.zeros(1, device=device)

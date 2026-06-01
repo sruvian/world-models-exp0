@@ -1,6 +1,6 @@
 # Environment
 environment:
-  run_env: false
+
   name: "CartPoleSim"
   gravity: 5.0
   mass1: 0.1
@@ -12,16 +12,16 @@ environment:
   seed: 44
 # Data Collection
 collector:
-  num_trajectories: 50
+  num_trajectories: 500
   episode_time: 1000
   policy_seed: 35
-  save: true
+  save: false
   impulse_policy: true
 # Datasets
 datasets:
   use_existing: true
   paths:
-    - "datasets/v0_CartPoleSim_*gravity5.000*_length10.000.npz"
+    - "datasets/impulse_policy/v0_CartPoleSim_*gravity5.000*_length10.000.npz"
 # Model
 model:
   run_model: true
@@ -29,7 +29,7 @@ model:
   state_dim: 5
   action_dim: 1
   hidden_dim: 64
-  latent_dim: 3
+  latent_dim: 64
 # Trainer
 trainer:
   run_trainer: true
@@ -46,7 +46,7 @@ hyperparams:
   optimizer: Adam
   loss: MSE
   lr: 0.001
-  rollout_steps: 5
+  rollout_steps: 15
   rollout_decay: "Linear"
   gamma: 0.9
 # Checkpointing

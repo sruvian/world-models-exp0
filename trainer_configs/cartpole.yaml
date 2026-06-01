@@ -1,6 +1,6 @@
 # Environment
 environment:
-  run_env: True
+
   name: "CartPoleSim"
   gravity: 9.8
   mass1: 0.1
@@ -15,16 +15,16 @@ collector:
   num_trajectories: 50
   episode_time: 1000
   policy_seed: 35
-  save: true
+  save: false
   impulse_policy: true
 # Datasets
 datasets:
-  use_existing: False
+  use_existing: false
   paths:
     - "datasets/v0_CartPoleSim_*.npz"
 # Model
 model:
-  run_model: False
+  run_model: false
   name: WorldModel
   state_dim: 5
   action_dim: 1
@@ -32,7 +32,7 @@ model:
   latent_dim: 8
 # Trainer
 trainer:
-  run_trainer: False
+  run_trainer: false
   batch_size: 256
   steps: 100000
   log_interval: 100
@@ -51,7 +51,7 @@ hyperparams:
   gamma: 0.9
 # Checkpointing
 checkpointing:
-  save: true
+  save: false
   save_path: "model_saves/"
   load: False
   load_path: null

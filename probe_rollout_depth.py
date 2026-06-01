@@ -9,27 +9,15 @@ from sklearn.metrics import r2_score
 from models import make_model
 from sim_envs.envs import make_env
 from collector.collect import collect_trajectories
-
-
-def parse_model(path: Path) -> dict:
-    flag = False
-    g, l = 0.0, 0.0
-    k = 0
-    name = path.stem
-    components = name.split("_")[2:]
-    if "combined" in components:
-        flag = True
-        k = int(components[1][1:])
-    else:
-        g = float(components[0][1:])
-        l = float(components[1][1:])
-        k = int(components[2][1:])
-    latent = int(components[-1][6:])
-    config = "combined" if flag else f"g{g}_l{l}"
-    return {"flag": flag, "g": g, "l": l, "latent": latent, "k": k, "name": config}
+from utils import parse_model
 
 def probe_at_depth(z: np.ndarray, target: np.ndarray,
                    alpha: float = 10.0) -> tuple[float, float]:
+
+    if not np.isfinite(z).all() or not np.isfinite(target).all():
+        return float('nan'), float('nan')
+
+    z = np.clip(z, -1e6, 1e6)
     n = z.shape[0]
     train_idx = int(0.8 * n)
     
@@ -68,20 +56,26 @@ COLLECTOR = {
 }
 
 
-def collect_for_config(g: float, l: float) -> tuple:
-    env = make_env("PendulumSim",
-        gravity=g, mass1=1.0, mass2=0.0,
-        length=l, dt=0.01,
-        max_action=10.0, damping=0.0, seed=42
-    )
+def collect_for_config(g: float, l: float, env) -> tuple:
+    if env == "CartPoleSim":
+        environment = make_env("CartPoleSim",
+            gravity=g, mass1=0.1, mass2=1.0,
+            length=l, dt=0.01,
+            max_action=10.0, damping=0.0, seed=42
+        )
+    else:
+        environment = make_env("PendulumSim",
+            gravity=g, mass1=1.0, mass2=0.0,
+            length=l, dt=0.01,
+            max_action=10.0, damping=0.0, seed=42
+        )
     states, actions, _ = collect_trajectories(
-        env,
+        environment,
         COLLECTOR["num_trajectories"],
         COLLECTOR["episode_time"],
         COLLECTOR["policy_seed"],
         COLLECTOR["save"],
-        COLLECTOR['correlated'],
-        COLLECTOR['correlation']
+        COLLECTOR["impulse_policy"]
     )
     return (torch.from_numpy(states).float(),
             torch.from_numpy(actions).float())
@@ -90,6 +84,7 @@ if __name__ == "__main__":
     args.add_argument("--models_dir", type=Path, default=None)
     args.add_argument("--model_pt", type=Path, default=None)
     args.add_argument("--alpha", type=float, default=10.0)
+    args.add_argument("--impulse_policy", action="store_true")
     parser = args.parse_args()
 
     pt_files: list[Path] = []
@@ -98,8 +93,8 @@ if __name__ == "__main__":
                     glob.glob(str(parser.models_dir / "*.pt"))]
     if parser.model_pt:
         pt_files.append(parser.model_pt)
-
-    csv_path = Path("probe_results/probe_rollout_depth.csv")
+    COLLECTOR["impulse_policy"] = parser.impulse_policy
+    csv_path = Path("probe_results/probe_rollout_depth_cartpole.csv")
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     write_header = not csv_path.exists()
     csv_file = open(csv_path, "a", newline="")
@@ -116,10 +111,11 @@ if __name__ == "__main__":
         config = parse_model(file)
         print(f"\n[{file.name}]")
 
+        state_dim = 5 if config["env"] == "CartPoleSim" else 3
         model_params = {
-            "state_dim": 3, "action_dim": 1,
+            "state_dim": state_dim, "action_dim": 1,
             "hidden_dim": 64, "latent_dim": config["latent"]
-        }
+            }
         model = make_model("WorldModel", **model_params)
         model.load_state_dict(torch.load(file))
         model.eval()
@@ -127,7 +123,7 @@ if __name__ == "__main__":
             else [(config["g"], config["l"])]
 
         for g_eval, l_eval in eval_configs:
-            states_t, actions_t = collect_for_config(g_eval, l_eval)
+            states_t, actions_t = collect_for_config(g_eval, l_eval, config["env"])
             N = states_t.shape[0]
 
             with torch.no_grad():
@@ -161,15 +157,15 @@ if __name__ == "__main__":
                 r2_th, r2s_th = probe_at_depth(z_np, theta_true, parser.alpha)
                 r2_td, r2s_td = probe_at_depth(z_np, thetadot_true, parser.alpha)
 
-                delta_th = round(r2_th - r2s_th, 6)
-                delta_td = round(r2_td - r2s_td, 6)
+                delta_th = round(r2_th - r2s_th, 6) if not (np.isnan(r2_th) or np.isnan(r2s_th)) else float('nan')
+                delta_td = round(r2_td - r2s_td, 6) if not (np.isnan(r2_td) or np.isnan(r2s_td)) else float('nan')
 
-                print(f"  g={g_eval} l={l_eval} depth={depth:3d} | "
+                print(f"g={g_eval} l={l_eval} depth={depth:3d} | "
                       f"theta_delta={delta_th:.4f} "
                       f"thetadot_delta={delta_td:.4f}")
 
                 writer.writerow([
-                    file.name, config["name"], f"g{g_eval}_l{l_eval}",
+                    file.name, config["config"], f"g{g_eval}_l{l_eval}",
                     config["latent"], config["k"], depth,
                     r2_th, r2s_th, delta_th,
                     r2_td, r2s_td, delta_td,
