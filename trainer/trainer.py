@@ -141,7 +141,7 @@ def trainer(
 
         if (step % log_interval == 0) or (step == steps-1):
             model.eval()
-            with torch.no_grad():
+            with torch.inference_mode():
                 val_idx = torch.randint(0, val_states.shape[0], (batch_size,), device=val_states.device)
                 val_loss = rollout_loss(model, val_states[val_idx], val_actions[val_idx], val_next_states[val_idx], loss_func, rollout_func, device = train_states.device)
             model.train()

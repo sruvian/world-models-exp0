@@ -1,8 +1,8 @@
 environment:
-  name: "CartPoleSim"
+  name: "PendulumSim"
   gravity: 0.0
-  mass1: 0.1
-  mass2: 1.0
+  mass1: 1.0
+  mass2: 0.0
   length: 0.0
   dt: 0.01
   max_action: 10.0
@@ -15,27 +15,27 @@ collector:
   episode_time: 1000
   policy_seed: 35
   save: False
-  impulse_policy: False
+  impulse_policy: True
 
 model:
   name: WorldModel
-  state_dim: 5
+  state_dim: 3
   action_dim: 1
   hidden_dim: 64
   latent_dim: 0
 
 # Checkpointing
 checkpointing:
-  load_paths: "model_saves/cartpole/*.pt"
+  load_paths: "model_saves/impulse_policy/pendulum/*.pt"
 
 # Settings
 settings:
   device: "cpu"
 
 probe:
-  output_csv: "probe_results/results_cartpole.csv"
+  output_csv: "probe_results/results_pendulum.csv"
   alpha: 10
 
 datasets:
   paths:
-    - "datasets/v0_CartPoleSim_*.npz"
+    - "datasets/impulse_policy/v0_PendulumSim_*.npz"

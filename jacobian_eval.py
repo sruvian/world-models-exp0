@@ -21,6 +21,8 @@ def compute_jacobian(model, z: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
     for i in range(z_next.shape[0]):
         grad = torch.autograd.grad(z_next[i], z, retain_graph=True)[0]
         J[i] = grad.detach()
+    if not torch.isfinite(J).all() or J.abs().max() > 1e8:
+        return None
     return J
 
 def action_jacobian(model, z, a):
@@ -33,6 +35,17 @@ def action_jacobian(model, z, a):
     return J_a
 
 def jacobian_stats(J: torch.Tensor, g: float, l: float, dt: float = 0.01, env = "PendulumSim") -> dict:
+
+    if J is None:
+        nan = float('nan')
+        return {
+            "max_eig": nan, "min_eig": nan, "mean_eig": nan,
+            "unit_circle_frac": nan, "contracting_frac": nan, "expanding_frac": nan,
+            "spectral_radius": nan, "min_singular": nan, "condition_number": nan,
+            "mean_eig_phase": nan, "expected_phase": nan, "phase_error": nan,
+            "g_over_l": round(g / l, 6),
+            "j_a_max": nan, "j_a_mean": nan, "j_a_norm": nan,
+        }
     eigenvalues = torch.linalg.eigvals(J)
     magnitudes = eigenvalues.abs()
     phases = torch.angle(eigenvalues)
@@ -187,14 +200,16 @@ if __name__ == "__main__":
                 a = actions_t[traj_idx, time_idx].unsqueeze(0)
 
                 with torch.enable_grad():
+                    
                     z = model.encode(s.unsqueeze(0)).squeeze(0)
                     J_s = compute_jacobian(model, z, a)
                     J_a = action_jacobian(model, z, a)
-
+                
                 stats = jacobian_stats( J_s, g_eval, l_eval, env = config["env"])
-                stats["j_a_max"] = round(float(J_a.abs().max()), 6)
-                stats["j_a_mean"] = round(float(J_a.abs().mean()), 6)
-                stats["j_a_norm"] = round(float(torch.norm(J_a)), 6)
+                if J_s is not None:
+                    stats["j_a_max"] = round(float(J_a.abs().max()), 6)
+                    stats["j_a_mean"] = round(float(J_a.abs().mean()), 6)
+                    stats["j_a_norm"] = round(float(torch.norm(J_a)), 6)
                 
                 all_stats.append(stats)
 

@@ -3,7 +3,7 @@ import numpy as np
 
 class PendulumSim():
 
-    def __init__(self, gravity: float, mass1: float, length: float, dt: float, max_action: float, damping: float, seed: int, mass2 = 0) -> None:
+    def __init__(self, gravity: float, mass1: float, length: float, dt: float, max_action: float, damping: float, seed: int, mass2: int = 0) -> None:
         
         # Physical parameters
 
@@ -13,6 +13,7 @@ class PendulumSim():
         self.dt = dt #seconds
         self.max_action = max_action #Newton metres
         self.damping = damping
+        self.name = "pendulum"
 
 
         self.gl = self.gravity/ self.length

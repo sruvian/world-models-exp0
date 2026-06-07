@@ -19,7 +19,7 @@ from models.simplenn import SimpleNN
 
 def generate_latents(model, states: torch.Tensor) -> torch.Tensor:
     model.eval()
-    with torch.no_grad():
+    with torch.inference_mode():
         N, T, state_dim = states.shape
         flat = states.reshape(-1, state_dim)
         z = model.encode(flat)
@@ -43,6 +43,14 @@ def train_val_split(states: torch.Tensor, z_states: torch.Tensor | None) -> tupl
 def run_probe(train_z: np.ndarray, val_z: np.ndarray,
               train_target: np.ndarray, val_target: np.ndarray,
               label: str, writer, meta: dict, alpha: float, probe_path: str) -> tuple[float, float, float]:
+
+    if not np.isfinite(train_z).all() or not np.isfinite(val_z).all():
+        print(f"{label}: SKIPPED (NaN/inf in latents)")
+        return float('nan'), float('nan'), float('nan')
+
+    if np.abs(train_z).max() > 1e4:
+        print(f"{label}: SKIPPED (latent explosion > 1e4)")
+        return float('nan'), float('nan'), float('nan')
     
     probe = Ridge(alpha=alpha)
     probe.fit(train_z, train_target)

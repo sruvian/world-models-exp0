@@ -61,7 +61,7 @@ def collect_trajectories(env, num_trajectories: int, episode_time: int, policy_s
 
     max_action = env.max_action
     if impulse_policy:
-        if env.mass2> 0:
+        if env.name == "cartpole":
             T = 2 * np.pi * np.sqrt((env.mass2 * env.length) / 
                              ((env.mass2 + env.mass1) * env.gravity))
         else:

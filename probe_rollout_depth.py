@@ -94,18 +94,22 @@ if __name__ == "__main__":
     if parser.model_pt:
         pt_files.append(parser.model_pt)
     COLLECTOR["impulse_policy"] = parser.impulse_policy
-    csv_path = Path("probe_results/probe_rollout_depth_cartpole.csv")
+    env_tag = "cartpole" if "cartpole" in str(parser.models_dir).lower() else "pendulum"
+    tag = "sparse" if parser.impulse_policy else "noise"
+    csv_path = Path(f"probe_results/probe_rollout_depth_{env_tag}_{tag}.csv")
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     write_header = not csv_path.exists()
     csv_file = open(csv_path, "a", newline="")
     writer = csv.writer(csv_file)
     if write_header:
         writer.writerow([
-            "checkpoint", "model_config", "eval_config",
-            "latent_dim", "k", "depth",
-            "r2_theta", "r2s_theta", "delta_theta",
-            "r2_thetadot", "r2s_thetadot", "delta_thetadot",
-        ])
+                "checkpoint", "model_config", "eval_config",
+                "latent_dim", "k", "depth",
+                "r2_theta", "r2s_theta", "delta_theta",
+                "r2_thetadot", "r2s_thetadot", "delta_thetadot",
+                "r2_x", "r2s_x", "delta_x",
+                "r2_xdot", "r2s_xdot", "delta_xdot",
+            ])
 
     for file in pt_files:
         config = parse_model(file)
@@ -126,14 +130,14 @@ if __name__ == "__main__":
             states_t, actions_t = collect_for_config(g_eval, l_eval, config["env"])
             N = states_t.shape[0]
 
-            with torch.no_grad():
+            with torch.inference_mode():
                 z0 = model.encode(states_t[:, 0, :])
 
             z_current = z0.clone()
 
             for depth in PROBE_DEPTHS:
                 if depth > 0:
-                    with torch.no_grad():
+                    with torch.inference_mode():
                         prev_depth = PROBE_DEPTHS[PROBE_DEPTHS.index(depth) - 1]
                         steps_to_take = depth - prev_depth
                         for step in range(steps_to_take):
@@ -159,17 +163,29 @@ if __name__ == "__main__":
 
                 delta_th = round(r2_th - r2s_th, 6) if not (np.isnan(r2_th) or np.isnan(r2s_th)) else float('nan')
                 delta_td = round(r2_td - r2s_td, 6) if not (np.isnan(r2_td) or np.isnan(r2s_td)) else float('nan')
+                if state_dim == 5:
+                    x_true = s_true[:, 3].numpy()
+                    xdot_true = s_true[:, 4].numpy()
+                    r2_x, r2s_x = probe_at_depth(z_np, x_true, parser.alpha)
+                    r2_xd, r2s_xd = probe_at_depth(z_np, xdot_true, parser.alpha)
+                    delta_x = round(r2_x - r2s_x, 6) if not (np.isnan(r2_x) or np.isnan(r2s_x)) else float('nan')
+                    delta_xd = round(r2_xd - r2s_xd, 6) if not (np.isnan(r2_xd) or np.isnan(r2s_xd)) else float('nan')
+                else:
+                    r2_x = r2s_x = delta_x = float('nan')
+                    r2_xd = r2s_xd = delta_xd = float('nan')
 
                 print(f"g={g_eval} l={l_eval} depth={depth:3d} | "
                       f"theta_delta={delta_th:.4f} "
                       f"thetadot_delta={delta_td:.4f}")
 
                 writer.writerow([
-                    file.name, config["config"], f"g{g_eval}_l{l_eval}",
-                    config["latent"], config["k"], depth,
-                    r2_th, r2s_th, delta_th,
-                    r2_td, r2s_td, delta_td,
-                ])
+                        file.name, config["config"], f"g{g_eval}_l{l_eval}",
+                        config["latent"], config["k"], depth,
+                        r2_th, r2s_th, delta_th,
+                        r2_td, r2s_td, delta_td,
+                        r2_x, r2s_x, delta_x,
+                        r2_xd, r2s_xd, delta_xd,
+                    ])
                 csv_file.flush()
 
     csv_file.close()

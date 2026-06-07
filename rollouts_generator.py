@@ -183,7 +183,7 @@ if __name__ == "__main__":
                     else:
                         freq_error = round(float(abs(pred_freq - true_freq) / (true_freq + 1e-8)), 6)
 
-                with torch.no_grad():
+                with torch.inference_mode():
                     z_true = model.encode(roll_states[0, 1:horizon+1])
                     z_pred = roll_eng.get_latents(roll_states, roll_actions, horizon)[0]
                     latent_div = round(float(torch.mean(torch.norm(z_pred - z_true, dim=-1)).item()), 6)

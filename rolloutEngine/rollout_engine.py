@@ -24,7 +24,7 @@ class RolloutEngine:
 
         
         preds = []
-        with torch.no_grad():
+        with torch.inference_mode():
             z = self.model.encode(states[:, 0, :])
             for k in range(horizon):
                 a_k = actions[:, k].unsqueeze(-1)
@@ -37,7 +37,7 @@ class RolloutEngine:
 
 
     def get_latents(self, states: torch.Tensor, actions: torch.Tensor, horizon: int) -> torch.Tensor:
-        with torch.no_grad():
+        with torch.inference_mode():
             z = self.model.encode(states[:, 0, :])
             latents = []
             for k in range(horizon):

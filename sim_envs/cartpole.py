@@ -13,6 +13,7 @@ class CartPoleSim():
         self.dt = dt
         self.damping = damping
         self.max_action = max_action
+        self.name = "cartpole"
         
         self.mpl = self.mass1 * self.length
         self.theta = 0.0

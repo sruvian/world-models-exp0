@@ -19,7 +19,7 @@ losses = {"MSE": torch.nn.MSELoss}
 
 def warm_start_encoder(pendulum_encoder: torch.nn.Module, hidden_dim: int, latent_angular: int) -> SimpleNN:
     unified_encoder = SimpleNN(5, hidden_dim, latent_angular)
-    with torch.no_grad():
+    with torch.inference_mode():
         unified_encoder.net[0].weight.data[:, :3] = pendulum_encoder.net[0].weight.data
         unified_encoder.net[0].bias.data.copy_(pendulum_encoder.net[0].bias.data)
         unified_encoder.net[2].weight.data.copy_(pendulum_encoder.net[2].weight.data)

@@ -85,7 +85,7 @@ def evaluate_predictions(model, states_padded: torch.Tensor, actions: torch.Tens
                           horizon: int = 50) -> dict:
 
     model.eval()
-    with torch.no_grad():
+    with torch.inference_mode():
         N, T, _ = states_padded.shape
         all_cos_err, all_sin_err, all_thetadot_err = [], [], []
         for i in range(N):
@@ -114,7 +114,7 @@ def evaluate_probe_retention(model, states_padded: torch.Tensor,
     model.eval()
     pendulum_model.eval()
 
-    with torch.no_grad():
+    with torch.inference_mode():
         N, T, _ = states_padded.shape
         flat_padded = states_padded.reshape(-1, 5)
         z_transfer = model.encode(flat_padded)

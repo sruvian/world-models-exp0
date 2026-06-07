@@ -46,7 +46,7 @@ def generate_latents_flat(model, states: np.ndarray) -> np.ndarray:
     model.eval()
     states_t = torch.from_numpy(states).float()
     N, T, state_dim = states_t.shape
-    with torch.no_grad():
+    with torch.inference_mode():
         flat = states_t.reshape(-1, state_dim)
         z = model.encode(flat)
     return z.numpy()
