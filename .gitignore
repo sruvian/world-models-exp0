@@ -6,3 +6,4 @@ logfiles/
 rollout_plots/
 probe_results/
 visualiser/simple_eda*
+patch_results/*
