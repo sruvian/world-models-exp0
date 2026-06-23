@@ -1,0 +1,67 @@
+# ----------------------------------------------------------------------
+# Editable-install config for the WorldSim repo (flat layout).
+#   Run once from the repo root:   pip install -e .
+#   Then, from any script anywhere:   from utils import ...
+#                                     from patchers import ...
+# ----------------------------------------------------------------------
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "worldsim"
+version = "0.1.0"
+description = "World-model identifiability experiments"
+requires-python = ">=3.10"
+# Dependencies intentionally left minimal here; keep using your existing
+# environment / requirements.txt. Add libs here only if you want them
+# installed automatically with `pip install -e .`.
+dependencies = []
+
+# ----------------------------------------------------------------------
+# Package discovery.
+# Flat layout: packages live at the repo root, NOT under src/.
+# We must list code folders explicitly so setuptools does not try to
+# package datasets/, model_saves/, logfiles/, *_results/, etc.
+# A "package" = a folder importable by Python. Folders WITHOUT an
+# __init__.py may still work via modern namespace-package rules, but it
+# is safest to ensure each code folder below has an __init__.py.
+# ----------------------------------------------------------------------
+[tool.setuptools]
+# Top-level single-file modules (e.g. utils.py) are listed here, WITHOUT
+# the .py extension. This is what makes `from utils import ...` work
+# from anywhere.
+py-modules = ["utils", "yaml_modifier"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "collector*",
+    "trainer*",
+    "patchers*",
+    "rollout_engine*",
+    "rollout_probes*",
+    "sim_envs*",
+    "models*",
+    "assoc_probes*",
+    "visualiser*",
+    "logger*",
+    "protocol_experiments*",
+    
+]
+exclude = [
+    "WSim*",
+    "datasets*",
+    "model_saves*",
+    "logfiles*",
+    "patch_results*",
+    "probe_results*",
+    "rollout_plots*",
+    "probe_configs*",
+    "trainer_configs*",
+    "tests*",
+    "__pycache__*",
+    ".pytest_cache*",
+    "transfer_config*",
+]

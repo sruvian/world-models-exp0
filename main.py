@@ -5,7 +5,7 @@ from sim_envs.envs import make_env
 from models.model import make_model
 from collector.collect import collect_trajectories
 from trainer.trainer import split_gen, trainer, stratified_split_gen
-from rolloutEngine.rollout_engine import RolloutEngine
+from rollout_engine.rollout_engine import RolloutEngine
 import matplotlib.pyplot as plt
 import glob
 import os
