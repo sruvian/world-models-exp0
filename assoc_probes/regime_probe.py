@@ -38,6 +38,8 @@ def collect_sparse_trajectories(g: float, l: float, env: str,
 
 
 def make_regime_labels(actions: np.ndarray, threshold: float = 1e-3) -> np.ndarray:
+    if actions.ndim == 3:
+        actions = actions.squeeze(-1)
     labels = (np.abs(actions) > threshold).astype(np.float32)
     return labels.reshape(-1)
 
@@ -46,6 +48,7 @@ def generate_latents_flat(model, states: np.ndarray) -> np.ndarray:
     model.eval()
     states_t = torch.from_numpy(states).float()
     N, T, state_dim = states_t.shape
+    states_t = states_t[:, :-1, :]
     with torch.inference_mode():
         flat = states_t.reshape(-1, state_dim)
         z = model.encode(flat)
@@ -77,7 +80,11 @@ if __name__ == "__main__":
     if parser.model_pt:
         pt_files.append(parser.model_pt)
 
-    csv_path = Path("probe_results/regime_probe.csv")
+    temp = parse_model(pt_files[0])
+    vae_tag = "vae" if temp["model_name"] == "WorldModelVAE" else "novae"
+    env_tag = "cartpole" if temp["env"] == "CartPoleSim" else "pendulum"
+    policy_tag = "sparse" if temp["impulse"] == True else "noise"
+    csv_path = Path(f"probe_results/regime_probe_{env_tag}_{policy_tag}_{vae_tag}.csv")
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     write_header = not csv_path.exists()
     csv_file = open(csv_path, "a", newline="")
@@ -86,6 +93,7 @@ if __name__ == "__main__":
         writer.writerow([
             "checkpoint", "model_config", "eval_config",
             "latent_dim", "k", "env",
+            "model_name", "beta",
             "accuracy", "auc",
             "frac_impulse", "frac_gap",
         ])
@@ -121,7 +129,7 @@ if __name__ == "__main__":
                 )
         else:
             state_dim = 5 if config["env"] == "CartPoleSim" else 3
-            model = make_model("WorldModel",
+            model = make_model(config["model_name"],
                 state_dim=state_dim, action_dim=1,
                 hidden_dim=64, latent_dim=config["latent"]
             )
@@ -140,6 +148,9 @@ if __name__ == "__main__":
 
             labels = make_regime_labels(actions, parser.threshold)
             z_flat = generate_latents_flat(model, states)
+            if not np.isfinite(z_flat).all() or np.abs(z_flat).max() > 1e4:
+                print(f"  SKIPPED (latent explosion)")
+                continue
 
             
             frac_impulse = float(labels.mean())
@@ -169,11 +180,12 @@ if __name__ == "__main__":
                   f"impulse_frac={frac_impulse:.3f}")
 
             writer.writerow([
-                file.name, config["config"], f"g{g_eval}_l{l_eval}",
-                config["latent"], config["k"], config["env"],
-                accuracy, auc,
-                round(frac_impulse, 4), round(frac_gap, 4),
-            ])
+                    file.name, config["config"], f"g{g_eval}_l{l_eval}",
+                    config["latent"], config["k"], config["env"],
+                    config["model_name"], config["beta"],
+                    accuracy, auc,
+                    round(frac_impulse, 4), round(frac_gap, 4),
+                ])
             csv_file.flush()
 
     csv_file.close()

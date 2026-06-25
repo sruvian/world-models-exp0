@@ -1,6 +1,7 @@
 from sklearn.linear_model import Ridge
 from sklearn.metrics import r2_score
 from sklearn.feature_selection import mutual_info_regression
+from sklearn.kernel_ridge import KernelRidge
 import torch
 import numpy as np
 import os
@@ -79,10 +80,63 @@ def run_probe(train_z: np.ndarray, val_z: np.ndarray,
     return r2, r2_shuffled, mi
 
 
+def stratified_probe_split(model, all_states: list, gravities: list, lengths: list,
+                            is_cartpole: bool, train_frac: float = 0.8) -> tuple:
+
+    train_states_list, val_states_list = [], []
+    train_g_list, val_g_list = [], []
+    train_l_list, val_l_list = [], []
+
+    for states_c, g_c, l_c in zip(all_states, gravities, lengths):
+        n = states_c.shape[0]
+        train_idx = int(train_frac * n)
+        train_states_list.append(states_c[:train_idx])
+        val_states_list.append(states_c[train_idx:])
+        train_g_list.append(g_c[:train_idx])
+        val_g_list.append(g_c[train_idx:])
+        train_l_list.append(l_c[:train_idx])
+        val_l_list.append(l_c[train_idx:])
+
+    train_states = torch.from_numpy(np.concatenate(train_states_list, axis=0)).float()
+    val_states = torch.from_numpy(np.concatenate(val_states_list, axis=0)).float()
+    train_g = torch.from_numpy(np.concatenate(train_g_list, axis=0)).float()
+    val_g = torch.from_numpy(np.concatenate(val_g_list, axis=0)).float()
+    train_l = torch.from_numpy(np.concatenate(train_l_list, axis=0)).float()
+    val_l = torch.from_numpy(np.concatenate(val_l_list, axis=0)).float()
+
+
+    train_z = generate_latents(model, train_states)
+    val_z = generate_latents(model, val_states)
+
+    N_tr, T_tr, latent_dim = train_z.shape
+
+    train_z_flat = train_z.reshape(-1, latent_dim).numpy()
+    val_z_flat = val_z.reshape(-1, latent_dim).numpy()
+
+    def build_targets(states, g_tensor, l_tensor):
+        targets = {
+            "theta": torch.atan2(states[:, :, 1], states[:, :, 0]).reshape(-1).numpy(),
+            "theta_dot": states[:, :, 2].reshape(-1).numpy(),
+            "gravity": g_tensor.reshape(-1).numpy(),
+            "length": l_tensor.reshape(-1).numpy(),
+        }
+        if is_cartpole:
+            targets["x"] = states[:, :, 3].reshape(-1).numpy()
+            targets["x_dot"] = states[:, :, 4].reshape(-1).numpy()
+        targets["g_over_l"] = (g_tensor / l_tensor).reshape(-1).numpy()
+        targets["sqrt_l_over_g"] = torch.sqrt(l_tensor / g_tensor).reshape(-1).numpy()
+        return targets
+
+    train_targets = build_targets(train_states, train_g, train_l)
+    val_targets = build_targets(val_states, val_g, val_l)
+
+    return train_z_flat, val_z_flat, train_targets, val_targets
+
 
 if __name__ == "__main__":
     args = argparse.ArgumentParser()
     args.add_argument("--yaml", type=str, required=True)
+
     parser = args.parse_args()
 
     with open(parser.yaml, 'r') as f:
@@ -92,34 +146,31 @@ if __name__ == "__main__":
 
     output_csv = yaml_out["probe"]["output_csv"]
     
-    tag = "noise"
-    if impulse_policy:
-        tag = "sparse"
+    policy_tag = "sparse" if impulse_policy else 'noise' 
+    env_tag = "cartpole" if yaml_out["environment"]["name"] == "CartPoleSim" else "pendulum"
+    vae_tag = "vae" if yaml_out["model"]["name"] == "WorldModelVAE" else "novae"
+    tag = f"{env_tag}_{policy_tag}_{vae_tag}"
     output_csv = output_csv[:-4]+f"_{tag}.csv"
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)
     write_header = not os.path.exists(output_csv)
     csv_file = open(output_csv, 'a', newline='')
     writer = csv.writer(csv_file)
     if write_header:
-        writer.writerow(["checkpoint", "config", "latent_dim", "k", "target", "r2", "r2_shuffled", "delta", "mi_sum"])
-
+        writer.writerow(["checkpoint", "config", "latent_dim", "k", "target", "r2", "r2_shuffled", "delta", "mi_sum", "r2_kernel"])
     
     
     env_name = yaml_out["environment"]["name"]
     is_cartpole = (env_name == "CartPoleSim")
     
-    if is_cartpole:
-        probe_path = f"probe_results/coefs_cartpole_{tag}"
+    probe_path = f"probe_results/coefs_{tag}"
         
-    else:
-        probe_path = f"probe_results/coefs_pendulum_{tag}"
     os.makedirs(probe_path, exist_ok=True)
     model_paths = glob.glob(yaml_out["checkpointing"]["load_paths"])
-    all_states, gravities, lengths = [], [], []
     
     model_config = yaml_out["model"]
     model_params = {k: v for k, v in model_config.items()
             if k not in ("name")}
+    
     for path in model_paths:
         current_config = parse_model(Path(path))
         if current_config["flag"]:
@@ -130,26 +181,6 @@ if __name__ == "__main__":
                 all_states.append(data["states"][:yaml_out["collector"]["num_trajectories"]])
                 gravities.append(np.full((all_states[-1].shape[0], all_states[-1].shape[1]), float(data["gravity"])))
                 lengths.append(np.full((all_states[-1].shape[0], all_states[-1].shape[1]), float(data["length"])))
-            probe_states = torch.from_numpy(np.concatenate(all_states, axis=0)).float()
-            gravity_tensor = torch.from_numpy(np.concatenate(gravities, axis=0)).float()
-            length_tensor = torch.from_numpy(np.concatenate(lengths, axis=0)).float()
-            if is_cartpole:
-                targets = {
-                    "theta": torch.atan2(probe_states[:,:,1], probe_states[:,:,0]),
-                    "theta_dot": probe_states[:,:,2],
-                    "x": probe_states[:,:,3],
-                    "x_dot": probe_states[:,:,4],
-                    "gravity": gravity_tensor,
-                    "length": length_tensor,
-                }
-            else:
-                targets = {
-                    "theta": torch.atan2(probe_states[:,:,1], probe_states[:,:,0]),
-                    "theta_dot": probe_states[:,:,2],
-                    "gravity": gravity_tensor,
-                    "length": length_tensor,
-                }
-            
 
         else:
             collector_config = yaml_out["collector"]
@@ -181,6 +212,8 @@ if __name__ == "__main__":
                     "gravity": torch.full((probe_states.shape[0], probe_states.shape[1]), current_config["g"]),
                     "length": torch.full((probe_states.shape[0], probe_states.shape[1]), current_config["l"]),
                 }
+
+        
         model_params["latent_dim"] = current_config["latent"]
         if current_config["protocol"] is not None:
             
@@ -215,48 +248,75 @@ if __name__ == "__main__":
             model = make_model(model_config["name"], **model_params)
             model.load_state_dict(torch.load(path))
             random_model = make_model(model_config["name"], **model_params)
-
-        train_z_rand_np = None
-        val_z_rand_np = None
-        if random_model is not None:
-            z_random = generate_latents(random_model, probe_states)
-            _, _, train_z_rand, val_z_rand = train_val_split(probe_states, z_random)
-            train_z_rand_np = train_z_rand.numpy()
-            val_z_rand_np = val_z_rand.numpy()
-                
-
-        z_states = generate_latents(model, probe_states)
-        train_states, val_states, train_z, val_z = train_val_split(probe_states, z_states)
-        train_z_np = train_z.numpy()
-        val_z_np = val_z.numpy()
         
-
+        if current_config["flag"]:
         
+            train_z_np, val_z_np, train_targets, val_targets = stratified_probe_split(
+                model, all_states, gravities, lengths, is_cartpole)
+            meta = {
+                "checkpoint": os.path.basename(path),
+                "config": current_config["config"],
+                "latent": current_config["latent"],
+                "k": current_config["k"],
+                "policy": tag
+            }
+            print(f"\n[{meta['checkpoint']}]")
+            print("=== Trained Model (stratified) ===")
+            for target_name in train_targets.keys():
+                run_probe(train_z_np, val_z_np, train_targets[target_name], val_targets[target_name],
+                        target_name, writer, meta, yaml_out["probe"]["alpha"], probe_path)
+            
+            if random_model is not None:
+                train_z_rand_np, val_z_rand_np, train_targets_rand, val_targets_rand = stratified_probe_split(
+                    random_model, all_states, gravities, lengths, is_cartpole
+                )
+                print("=== Random Model Baseline (stratified) ===")
+                for target_name in train_targets_rand.keys():
+                    run_probe(train_z_rand_np, val_z_rand_np, train_targets_rand[target_name], val_targets_rand[target_name],
+                            f"{target_name}_random", writer, meta, yaml_out["probe"]["alpha"], probe_path)
+        else:
 
-        meta = {
-            "checkpoint": os.path.basename(path),
-            "config": current_config["config"],
-            "latent": current_config["latent"],
-            "k": current_config["k"],
-            "policy": tag
-        }
+            train_z_rand_np = None
+            val_z_rand_np = None
+            if random_model is not None:
+                z_random = generate_latents(random_model, probe_states)
+                _, _, train_z_rand, val_z_rand = train_val_split(probe_states, z_random)
+                train_z_rand_np = train_z_rand.numpy()
+                val_z_rand_np = val_z_rand.numpy()
+                    
 
-        print(f"\n[{meta['checkpoint']}]")
-        print("=== Trained Model ===")
-        for target_name, target in targets.items():
-            train_target, val_target, _, _ = train_val_split(target.unsqueeze(-1), None)
-            train_target_np = train_target.numpy().ravel()
-            val_target_np = val_target.numpy().ravel()
-            run_probe(train_z_np, val_z_np, train_target_np, val_target_np, target_name, writer, meta, yaml_out["probe"]["alpha"], probe_path)
+            z_states = generate_latents(model, probe_states)
+            train_states, val_states, train_z, val_z = train_val_split(probe_states, z_states)
+            train_z_np = train_z.numpy()
+            val_z_np = val_z.numpy()
+            
 
-        if random_model is not None:
-            print("=== Random Model Baseline ===")
+            
+
+            meta = {
+                "checkpoint": os.path.basename(path),
+                "config": current_config["config"],
+                "latent": current_config["latent"],
+                "k": current_config["k"],
+                "policy": tag
+            }
+
+            print(f"\n[{meta['checkpoint']}]")
+            print("=== Trained Model ===")
             for target_name, target in targets.items():
                 train_target, val_target, _, _ = train_val_split(target.unsqueeze(-1), None)
                 train_target_np = train_target.numpy().ravel()
                 val_target_np = val_target.numpy().ravel()
-                run_probe(train_z_rand_np, val_z_rand_np, train_target_np, val_target_np,
-                        f"{target_name}_random", writer, meta, yaml_out["probe"]["alpha"], probe_path)
+                run_probe(train_z_np, val_z_np, train_target_np, val_target_np, target_name, writer, meta, yaml_out["probe"]["alpha"], probe_path)
+
+            if random_model is not None:
+                print("=== Random Model Baseline ===")
+                for target_name, target in targets.items():
+                    train_target, val_target, _, _ = train_val_split(target.unsqueeze(-1), None)
+                    train_target_np = train_target.numpy().ravel()
+                    val_target_np = val_target.numpy().ravel()
+                    run_probe(train_z_rand_np, val_z_rand_np, train_target_np, val_target_np,
+                            f"{target_name}_random", writer, meta, yaml_out["probe"]["alpha"], probe_path)
 
         csv_file.flush()
     csv_file.close()

@@ -147,11 +147,11 @@ if __name__ == "__main__":
 
     COLLECTOR["impulse_policy"] = parser.impulse_policy
 
-    tag = "noise"
-    if COLLECTOR["impulse_policy"]:
-        tag = "sparse"
+    policy_tag = "sparse" if COLLECTOR["impulse_policy"] == True else "noise"
     env_tag = "cartpole" if "cartpole" in str(parser.models_dir).lower() else "pendulum"
-    csv_path = Path(f"probe_results/jacobian_results_{env_tag}_{parser.num_points}_{tag}.csv")
+    temp = parse_model(pt_files[0])
+    vae_tag = "vae" if temp["model_name"] == "WorldModelVAE" else "novae"
+    csv_path = Path(f"temp_jac/jacobian_results_{env_tag}_{parser.num_points}_{policy_tag}_{vae_tag}.csv")
     csv_path.parent.mkdir(parents = True, exist_ok = True)
     write_header = not csv_path.exists()
     csv_file = open(csv_path, "a", newline = "")
@@ -180,8 +180,8 @@ if __name__ == "__main__":
             "state_dim": state_dim, "action_dim": 1,
             "hidden_dim": 64, "latent_dim": config["latent"]
         }
-        model = make_model("WorldModel", **model_params)
-        model.load_state_dict(torch.load(file))
+        model = make_model(config["model_name"], **model_params)
+        # model.load_state_dict(torch.load(file))
         model.eval()
 
         if config["flag"]:

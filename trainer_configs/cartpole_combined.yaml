@@ -16,20 +16,20 @@ collector:
   episode_time: 1000
   policy_seed: 35
   save: false
-  impulse_policy: true
+  impulse_policy: false
 # Datasets
 datasets:
   use_existing: true
   paths:
-    - "datasets/impulse_policy/*_CartPoleSim_*.npz"
+    - "datasets/*_CartPoleSim_*.npz"
 # Model
 model:
   run_model: true
-  name: WorldModel
+  name: WorldModelVAE
   state_dim: 5
   action_dim: 1
   hidden_dim: 64
-  latent_dim: 64
+  latent_dim: 32
 # Trainer
 trainer:
   run_trainer: true
@@ -49,10 +49,11 @@ hyperparams:
   rollout_steps: 15
   rollout_decay: "Linear"
   gamma: 0.9
+  beta: 0.1
 # Checkpointing
 checkpointing:
   save: true
-  save_path: "model_saves/"
+  save_path: "model_saves/vae/cartpole"
   load: False
   load_path: null
 # Settings

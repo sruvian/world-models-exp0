@@ -101,15 +101,17 @@ if __name__ == "__main__":
         pt_files = temp_files
         
     top_dir = parser.top_dir
-    if parser.impulse_policy:
-        top_dir = os.path.join(top_dir, "impulse_policy")
+    # if parser.impulse_policy:
+    #     top_dir = os.path.join(top_dir, "impulse_policy")
     os.makedirs(top_dir, exist_ok=True)
     environment_actions = [0, 0.5, 5, 10, 15, 20, 30, 50]
     horizons = [50, 500, 5000]
     
 
     env_tag = "cartpole" if "cartpole" in str(parser.models_dir).lower() else "pendulum"
-    csv_path = Path(f"{top_dir}/{env_tag}_{policy_tag}_rollout_meta.csv")
+    temp = parse_model(pt_files[0])
+    vae_tag = "vae" if temp["model_name"] == "WorldModelVAE" else "novae"
+    csv_path = Path(f"{top_dir}/{env_tag}_{policy_tag}_{vae_tag}_rollout_meta.csv")
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     write_header = not csv_path.exists()
     csv_file = open(csv_path, 'a', newline='')
@@ -140,7 +142,7 @@ if __name__ == "__main__":
             "state_dim": state_dim, "action_dim": 1,
             "hidden_dim": 64, "latent_dim": config["latent"]
 }
-        model = make_model("WorldModel", **model_params)
+        model = make_model(config["model_name"], **model_params)
         model.load_state_dict(torch.load(file))
         model.eval()
         model_dir = top_dir / f"latent{config['latent']}" / \

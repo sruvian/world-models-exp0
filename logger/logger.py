@@ -7,7 +7,7 @@ class Logger:
                  loss_name: str, lr: float, 
                  batch_size: int, steps: int,
                  gravity: float, length: float,
-                 latent_dim: int) -> None:
+                 latent_dim: int, beta: float) -> None:
         
         self.config = {
             "model_name": model_name,
@@ -15,7 +15,8 @@ class Logger:
             "loss_name": loss_name, "lr": lr, 
             "batch_size": batch_size, "steps": steps,
             "gravity": gravity, "length": length,
-            "latent_dim": latent_dim
+            "latent_dim": latent_dim,
+            "beta": beta,
         }
         self.start_time = 0.0
         self.total_time = 0.0

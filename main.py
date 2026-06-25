@@ -89,30 +89,52 @@ if __name__=="__main__":
         train_s, train_s_next, train_a, val_s, val_s_next, val_a = split_gen(states, actions, hyperparams_config["rollout_steps"], device)
         logger = Logger(model_config["name"], hyperparams_config["optimizer"], hyperparams_config["loss"], 
                 hyperparams_config["lr"], trainer_config["batch_size"], trainer_config["steps"],
-                env_config["gravity"], env_config.get("length", 0.0), model_config["latent_dim"])
+                env_config["gravity"], env_config.get("length", 0.0), model_config["latent_dim"], hyperparams_config["beta"])
         logger.start()
         trained_model = trainer(train_s, train_s_next, train_a, val_s, val_s_next, val_a, model, logger, optimizer, loss_func, trainer_config["batch_size"], trainer_config["steps"],
-                                hyperparams_config["rollout_decay"], hyperparams_config["gamma"], trainer_config["log_interval"])
+                                hyperparams_config["rollout_decay"], hyperparams_config["gamma"], trainer_config["log_interval"], hyperparams_config["beta"])
         logger.finish()
         base_dir = os.path.dirname(os.path.abspath(__file__))
+        base_dir = os.path.join(base_dir, "logfiles")
+        if model_config['name'] == "WorldModelVAE":
+            base_dir = os.path.join(base_dir, "vae")
         if collector_config["impulse_policy"]:
-            log_dir = os.path.join(base_dir, "logfiles/impulse_policy")
-        else:   
-            log_dir = os.path.join(base_dir, "logfiles")
+            base_dir = os.path.join(base_dir, "impulse_policy")
+        if env_config['name'] == "CartPoleSim":
+            log_dir = os.path.join(base_dir, "cartpole")
+        else:
+            log_dir = os.path.join(base_dir, "pendulum")
         
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-        log_path = os.path.join(log_dir, 
+        
+        if model_config['name'] == "WorldModelVAE":
+            log_path = os.path.join(log_dir, 
             f"log_{model_config['name']}_{config_tag}"
             f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
-            f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}.npz")
+            f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}_beta{hyperparams_config['beta']}.npz")
+        else:
+            log_path = os.path.join(log_dir, 
+                f"log_{model_config['name']}_{config_tag}"
+                f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
+                f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}.npz")
         logger.save(log_path, yaml_out["datasets"]["use_existing"], yaml_out["datasets"]["paths"])
 
         if yaml_out["checkpointing"]["save"]:
             model_save_path = yaml_out["checkpointing"]["save_path"]
-            if collector_config["impulse_policy"]:
-                model_save_path = os.path.join(model_save_path, "impulse_policy") 
-            checkpoint_path = os.path.join(
+            # if collector_config["impulse_policy"]:
+            #     model_save_path = os.path.join(model_save_path, "impulse_policy") 
+            if model_config['name'] == "WorldModelVAE":
+
+                checkpoint_path = os.path.join(
+                    model_save_path,
+                    f"model_{model_config['name']}_{config_tag}"
+                    f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
+                    f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}_beta{hyperparams_config['beta']}.pt"
+                )
+            
+            else:
+                checkpoint_path = os.path.join(
                 model_save_path,
                 f"model_{model_config['name']}_{config_tag}"
                 f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"

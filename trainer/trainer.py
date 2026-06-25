@@ -7,12 +7,13 @@ from models import WorldModel
 import tqdm
 
 from models.transfer import ProtocolAModel, ProtocolBModel
+from models.wmodel import WorldModelVAE
 
 
 def split_gen(states: np.ndarray | torch.Tensor,
               actions: np.ndarray | torch.Tensor,
               rollout: int = 1, device: str = "cpu",
-              windows_per_traj: int = 20) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+              windows_per_traj: int = 1) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
 
     if isinstance(states, torch.Tensor):
         states = states.numpy()
@@ -107,7 +108,7 @@ def trainer(
         val_states: torch.Tensor,
         val_next_states: torch.Tensor,
         val_actions: torch.Tensor,
-        model: WorldModel | ProtocolAModel| ProtocolBModel,
+        model: WorldModel | ProtocolAModel| ProtocolBModel| WorldModelVAE,
         logger: Logger,
         optimizer: torch.optim.Optimizer,
         loss_func: torch.nn.Module,
@@ -115,8 +116,9 @@ def trainer(
         steps: int,
         rollout_decay: str,
         gamma: float,
-        log_interval: int
-)-> WorldModel| ProtocolAModel| ProtocolBModel:
+        log_interval: int,
+        beta: float = 1.0
+)-> WorldModel| ProtocolAModel| ProtocolBModel| WorldModelVAE:
     
     rollout_func = partial(lin_dec, gamma=gamma) if rollout_decay == "Linear" else partial(exp_dec, gamma=gamma)
     num_samples = train_states.shape[0]
@@ -131,8 +133,10 @@ def trainer(
         c_train_a = train_actions[idx]
 
         optimizer.zero_grad()
-
-        total_loss = rollout_loss(model, c_train_s, c_train_a, c_train_n_s, loss_func, rollout_func, device = train_states.device)
+        if isinstance(model, WorldModelVAE):
+            total_loss = rollout_loss_vae(model, c_train_s, c_train_a, c_train_n_s, loss_func, rollout_func, device = train_states.device, beta = beta)
+        else:
+            total_loss = rollout_loss(model, c_train_s, c_train_a, c_train_n_s, loss_func, rollout_func, device = train_states.device)
 
         total_loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -143,7 +147,10 @@ def trainer(
             model.eval()
             with torch.inference_mode():
                 val_idx = torch.randint(0, val_states.shape[0], (batch_size,), device=val_states.device)
-                val_loss = rollout_loss(model, val_states[val_idx], val_actions[val_idx], val_next_states[val_idx], loss_func, rollout_func, device = train_states.device)
+                if isinstance(model, WorldModelVAE):
+                    val_loss = rollout_loss_vae_val(model, val_states[val_idx], val_actions[val_idx], val_next_states[val_idx], loss_func, rollout_func, device = train_states.device, beta = beta)
+                else:
+                    val_loss = rollout_loss(model, val_states[val_idx], val_actions[val_idx], val_next_states[val_idx], loss_func, rollout_func, device = train_states.device)
             model.train()
             logger.log(running_loss / log_interval, val_loss.item(), step)
             pbar.set_postfix(train_loss=running_loss/log_interval, val_loss=val_loss.item())
@@ -152,7 +159,8 @@ def trainer(
     return model
 
 
-def rollout_loss(model: WorldModel | ProtocolAModel| ProtocolBModel, states: torch.Tensor, actions: torch.Tensor, next_states: torch.Tensor, loss_func: torch.nn.Module, rollout_func: Callable, device: torch.device):
+def rollout_loss(model: WorldModel | ProtocolAModel| ProtocolBModel, states: torch.Tensor, actions: torch.Tensor, next_states: torch.Tensor,
+                  loss_func: torch.nn.Module, rollout_func: Callable, device: torch.device):
     K = states.shape[1]
     z = model.encode(states[:, 0, :])
     total_loss = torch.zeros(1, device=device)
@@ -164,6 +172,38 @@ def rollout_loss(model: WorldModel | ProtocolAModel| ProtocolBModel, states: tor
         total_loss += weight * loss_func(s_hat, next_states[:, k, :])
     return total_loss
 
+def rollout_loss_vae(model: WorldModelVAE, states: torch.Tensor, actions: torch.Tensor, next_states: torch.Tensor, 
+                     loss_func: torch.nn.Module, rollout_func, beta, device):
+    K = states.shape[1]
+
+    z, kl = model.encode_with_kl(states[:, 0, :])
+    total_loss = torch.zeros(1, device=device)
+
+    for k in range(K):
+        a_k = actions[:, k].unsqueeze(-1)
+        z = model.step(z, a_k)
+        s_hat = model.decode(z)
+        weight = rollout_func(K, k)
+        total_loss += weight * loss_func(s_hat, next_states[:, k, :])
+    total_loss += beta * kl
+    return total_loss
+
+
+def rollout_loss_vae_val(model, states, actions, next_states,
+                          loss_func, rollout_func, beta, device):
+    K = states.shape[1]
+    mu, log_var = model.encoder(states[:, 0, :])
+    kl = -0.5 * (1 + log_var - mu.pow(2) - log_var.exp()).mean(dim=-1).mean()
+    z = mu
+    total_loss = torch.zeros(1, device=device)
+    for k in range(K):
+        a_k = actions[:, k].unsqueeze(-1)
+        z = model.step(z, a_k)
+        s_hat = model.decode(z)
+        weight = rollout_func(K, k)
+        total_loss += weight * loss_func(s_hat, next_states[:, k, :])
+    total_loss += beta * kl
+    return total_loss
 
 def lin_dec(K, k, gamma):
     return (K - k) / K

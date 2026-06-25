@@ -3,21 +3,23 @@ import glob
 import os
 import argparse
 
-SKIP_FILES = {"pendulum.yaml", "pendulum_test.yaml",}
+SKIP_FILES = {"pendulum.yaml", "pendulum_test.yaml", "cartpole.yaml"}
 
 CHANGES = {
-    # "hyperparams.rollout_steps": 50,
-    # "hyperparams.rollout_decay": "Linear",
+    # # "hyperparams.rollout_steps": 50,
+    # # "hyperparams.rollout_decay": "Linear",
     # "datasets.use_existing": True,
     # "model.run_model": True,
     # "trainer.run_trainer": True,
-    # "trainer.steps": 100000,
+    # # "trainer.steps": 100000,
     # "checkpointing.save": True,
-    # "checkpointing.load": False,
-    # "rollout_engine.run_rollouts": False,
-    # "model.latent_dim": 32,
-    "collector.save": True,
-    "collector.impulse_policy": True
+    # # "collector.num_trajectories": 500,
+    # # "checkpointing.load": False,
+    # # "rollout_engine.run_rollouts": False,
+    # # "model.latent_dim": 32,
+    # "collector.save": False,
+    # "collector.impulse_policy": True
+    # "settings.device": "cpu"
 }
 
 def set_nested(config, dotted_key, value):
@@ -30,10 +32,8 @@ def set_nested(config, dotted_key, value):
     return old
 
 def patch_yaml_inplace(path, changes):
-    """Edit yaml values in place using string replacement to preserve comments and formatting."""
     with open(path, 'r') as f:
         lines = f.readlines()
-
     with open(path, 'r') as f:
         config = yaml.safe_load(f)
 
@@ -41,30 +41,27 @@ def patch_yaml_inplace(path, changes):
     for dotted_key, new_val in changes.items():
         try:
             old_val = set_nested(config, dotted_key, new_val)
-            if old_val == "__missing__":
-                # find the parent section and append after its last key
-                section = dotted_key.split(".")[-2]
-                leaf = dotted_key.split(".")[-1]
-                for i, line in enumerate(lines):
-                    if line.strip() == f"{section}:":
-                        # find end of this section
-                        j = i + 1
-                        while j < len(lines) and (lines[j].startswith(" ") or lines[j].strip() == ""):
-                            j += 1
-                        indent = "  "  # assume 2-space indent
-                        lines.insert(j, f"{indent}{leaf}: {format_val(new_val)}\n")
-                        break
-            edits.append((dotted_key.split(".")[-1], old_val, new_val))
+            edits.append((dotted_key, old_val, new_val))
         except KeyError as e:
-            print(f"  WARNING: parent section not found {e}")
+            print(f"  WARNING: key not found {e}")
             continue
 
-    for i, line in enumerate(lines):
-        for leaf_key, old_val, new_val in edits:
+    for dotted_key, old_val, new_val in edits:
+        parts = dotted_key.split(".")
+        section = parts[-2] if len(parts) > 1 else None
+        leaf_key = parts[-1]
+        
+        in_section = False
+        for i, line in enumerate(lines):
             stripped = line.lstrip()
-            if stripped.startswith(f"{leaf_key}:"):
+            # track which section we're in
+            if section and line.strip() == f"{section}:":
+                in_section = True
+                continue
+            if in_section and not line.startswith(" ") and line.strip().endswith(":"):
+                in_section = False  # moved to new section
+            if (in_section or section is None) and stripped.startswith(f"{leaf_key}:"):
                 indent = line[: len(line) - len(stripped)]
-                # preserve inline comments if any
                 comment = ""
                 val_part = stripped[len(leaf_key) + 1:].strip()
                 if "#" in val_part:
@@ -85,9 +82,20 @@ def format_val(val):
 
 if __name__ == "__main__":
     args = argparse.ArgumentParser()
-    args.add_argument("--yaml_dir", type=str, default="configs/")
+    args.add_argument("--yaml_dir", type=str, default="trainer_configs/")
     args.add_argument("--dry_run", action="store_true")
+    args.add_argument("--latent", type=int, default=None)
+    args.add_argument("--k", type=int, default=None)
+    args.add_argument('--beta', type = float, default = None)
     parser = args.parse_args()
+
+    # build CHANGES dynamically from CLI args
+    if parser.latent is not None:
+        CHANGES["model.latent_dim"] = parser.latent
+    if parser.k is not None:
+        CHANGES["hyperparams.rollout_steps"] = parser.k
+    if parser.beta is not None:
+        CHANGES["hyperparams.beta"] = parser.beta
 
     if not CHANGES:
         print("No changes configured.")

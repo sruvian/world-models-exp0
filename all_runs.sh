@@ -10,7 +10,7 @@ CONFIGS=(
   "pendulum_g15.0_l2.0"
   "pendulum_g15.0_l10.0"
   "pendulum_g15.0_l18.0"
-  "pendulum_combined"
+  # "pendulum_combined"
 )
 
 mkdir -p logs

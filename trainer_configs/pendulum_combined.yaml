@@ -15,21 +15,21 @@ collector:
   episode_time: 1000
   policy_seed: 35
   save: false
-  impulse_policy: true
+  impulse_policy: false
 
 datasets:
   use_existing: true
   paths:
-    - "datasets/impulse_policy/v0_PendulumSim_*.npz"
+    - "datasets/v0_PendulumSim_*.npz"
 
 # Model Parameterrs
 model:
   run_model: true
-  name: WorldModel
+  name: WorldModelVAE
   state_dim: 3
   action_dim: 1
   hidden_dim: 64
-  latent_dim: 64
+  latent_dim: 32
 
 # Training and Testing Parameters
 trainer:
@@ -53,11 +53,12 @@ hyperparams:
   rollout_decay: "Linear"
   gamma: 0.9
   rollout_steps: 15
+  beta: 0.1
   
 
 checkpointing:
   save: true
-  save_path: "model_saves/"
+  save_path: "model_saves/vae/pendulum"
   load: False
   load_path: null
 

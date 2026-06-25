@@ -1,12 +1,13 @@
 import torch
 from models import WorldModel
 from models.transfer import ProtocolAModel, ProtocolBModel
+from models.wmodel import WorldModelVAE
 
 
 
 class RolloutEngine:
 
-    def __init__(self, model: WorldModel |ProtocolAModel| ProtocolBModel, loss: torch.nn.Module):
+    def __init__(self, model: WorldModel |ProtocolAModel| ProtocolBModel| WorldModelVAE, loss: torch.nn.Module):
 
         self.model = model
         self.loss = loss
