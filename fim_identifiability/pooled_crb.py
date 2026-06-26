@@ -54,14 +54,13 @@ def fim_for_file(path, h=1e-2):
     all_states  = d["states"]
     all_actions = d["actions"]
     g  = float(d["gravity"]); l = float(d["length"]); dt = float(d["dt"])
-    is_cart = "CartPoleSim" in os.path.basename(path)
-    if is_cart:
-        m1 = float(d["mass1"]); m2 = float(d["mass2"])
+    is_cart = "CartPoleSim" in os.path.basename(path)      
 
     N = all_states.shape[0]
     F_total = np.zeros((2, 2))
     for n in range(N):
         if is_cart:
+            m1 = float(d["mass1"]); m2 = float(d["mass2"])
             logp = build_logp_cartpole(all_states[n], all_actions[n], dt, m1, m2)
         else:
             logp = build_logp_pendulum(all_states[n], all_actions[n], dt)
