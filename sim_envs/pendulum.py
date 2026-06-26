@@ -1,7 +1,7 @@
 import numpy as np
+from .base_environment import Environment
 
-
-class PendulumSim():
+class PendulumSim(Environment):
 
     def __init__(self, gravity: float, mass1: float, length: float, dt: float, max_action: float, damping: float, seed: int, mass2: int = 0) -> None:
         

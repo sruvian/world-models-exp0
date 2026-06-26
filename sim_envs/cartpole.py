@@ -1,7 +1,7 @@
 import numpy as np
+from .base_environment import Environment
 
-
-class CartPoleSim():
+class CartPoleSim(Environment):
 
     def __init__(self, gravity: float, mass1: float, mass2: float, length: float, dt: float, max_action: float, damping: float, seed: int ) -> None:
         

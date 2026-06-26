@@ -1,9 +1,12 @@
 from .pendulum import PendulumSim
 from .cartpole import CartPoleSim
+from .base_environment import Environment
+from typing import TypeVar
 
+E = TypeVar("E", bound=Environment)
 envs = {"PendulumSim": PendulumSim, "CartPoleSim": CartPoleSim}
 
-def make_env(env_name, **kwargs):
+def make_env(env_name, **kwargs)-> E:
     if env_name not in envs:
         raise ValueError("Environment unavailable")
     
