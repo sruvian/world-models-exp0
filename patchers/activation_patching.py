@@ -11,48 +11,96 @@ from collector import collect_trajectories
 import csv
 
 from models import WorldModel, ProtocolAModel, ProtocolBModel
+
 ALL_CONFIGS = [
     (5.0, 2.0), (5.0, 10.0), (5.0, 18.0),
     (9.8, 2.0), (9.8, 10.0), (9.8, 18.0),
     (15.0, 2.0), (15.0, 10.0), (15.0, 18.0),
 ]
-def get_angular_dims(probe_coef: Path, top_k: int = 3)-> np.ndarray:
+
+# Number of random dimension draws to average over for the rand_dims control.
+N_RAND_DIM_DRAWS = 10
+
+
+def get_angular_dims(probe_coef: Path, top_k: int = 3) -> np.ndarray:
     coef = np.load(probe_coef)
     return np.argsort(np.abs(coef))[-top_k:]
 
-def patch_trajectories(model: WorldModel| ProtocolAModel| ProtocolBModel, source_traj: torch.Tensor, target_traj: torch.Tensor, 
-                       angular_dims, random_patch: bool = False):
 
-    z_source = model.encode(source_traj)
-    z_target = model.encode(target_traj)
-    batch= source_traj.shape[0]
-    action = torch.zeros(batch, 1)
-    z_patched = z_target.clone()
-
-    if random_patch:
-        z_patched[:, angular_dims] = torch.randn_like(z_source[:, angular_dims])
-    else:
-        z_patched[:, angular_dims] = z_source[:, angular_dims]
-    
+def _shift_from_patched(model, z_source, z_target, z_patched, action, source_traj):
+    """Step + decode source/target/patched latents and return shift metrics."""
     z_source_step = model.step(z_source, action)
     z_target_step = model.step(z_target, action)
     z_patched_step = model.step(z_patched, action)
 
-
     s_hat_baseline = model.decode(z_target_step)
-    s_hat_patched  = model.decode(z_patched_step)
-    s_hat_source   = model.decode(z_source_step)
-    
+    s_hat_patched = model.decode(z_patched_step)
+    s_hat_source = model.decode(z_source_step)
 
-    baseline_err       = ((s_hat_baseline[:, :2] - s_hat_source[:, :2])**2).mean().sqrt().item()
-    patched_err        = ((s_hat_patched[:, :2]  - s_hat_source[:, :2])**2).mean().sqrt().item()
-    baseline_err_source = ((s_hat_baseline[:, :2] - source_traj[:, :2])**2).mean().sqrt().item()
-    patched_err_source  = ((s_hat_patched[:, :2]  - source_traj[:, :2])**2).mean().sqrt().item()
+    baseline_err = ((s_hat_baseline[:, :2] - s_hat_source[:, :2]) ** 2).mean().sqrt().item()
+    patched_err = ((s_hat_patched[:, :2] - s_hat_source[:, :2]) ** 2).mean().sqrt().item()
+    baseline_err_source = ((s_hat_baseline[:, :2] - source_traj[:, :2]) ** 2).mean().sqrt().item()
+    patched_err_source = ((s_hat_patched[:, :2] - source_traj[:, :2]) ** 2).mean().sqrt().item()
 
-    shift        = baseline_err - patched_err
+    shift = baseline_err - patched_err
     shift_source = baseline_err_source - patched_err_source
-
     return shift, shift_source, baseline_err, patched_err, baseline_err_source, patched_err_source
+
+
+def patch_trajectories(model: WorldModel | ProtocolAModel | ProtocolBModel,
+                       source_traj: torch.Tensor, target_traj: torch.Tensor,
+                       angular_dims, patch_mode: str = "real",
+                       rng: np.random.Generator = None):
+    """
+    patch_mode:
+      "real"        -> real source values into probe-selected dims   (thesis condition)
+      "rand_values" -> random values into probe-selected dims        (tests contents)
+      "rand_dims"   -> real source values into randomly chosen dims  (tests location)
+
+    For "rand_dims" we average over N_RAND_DIM_DRAWS random dimension sets so the
+    control is not a single (possibly unlucky) draw.
+    """
+    z_source = model.encode(source_traj)
+    z_target = model.encode(target_traj)
+    batch = source_traj.shape[0]
+    action = torch.zeros(batch, 1)
+
+    latent_dim = z_source.shape[1]
+    k = len(angular_dims)
+
+    if patch_mode == "real":
+        z_patched = z_target.clone()
+        z_patched[:, angular_dims] = z_source[:, angular_dims]
+        return _shift_from_patched(model, z_source, z_target, z_patched, action, source_traj)
+
+    elif patch_mode == "rand_values":
+        z_patched = z_target.clone()
+        z_patched[:, angular_dims] = torch.randn_like(z_source[:, angular_dims])
+        return _shift_from_patched(model, z_source, z_target, z_patched, action, source_traj)
+
+    elif patch_mode == "rand_dims":
+        if rng is None:
+            raise ValueError("rand_dims requires an rng")
+        # Avoid picking the probe-selected dims themselves so the control is a
+        # genuine "different location" comparison.
+        probe_set = set(int(d) for d in angular_dims)
+        candidates = np.array([d for d in range(latent_dim) if d not in probe_set])
+        # If there aren't enough non-probe dims, fall back to sampling from all dims.
+        pool = candidates if len(candidates) >= k else np.arange(latent_dim)
+
+        draws = []
+        for _ in range(N_RAND_DIM_DRAWS):
+            dims = rng.choice(pool, size=k, replace=False)
+            z_patched = z_target.clone()
+            z_patched[:, dims] = z_source[:, dims]
+            draws.append(_shift_from_patched(model, z_source, z_target, z_patched, action, source_traj))
+        # Average each returned metric across draws.
+        arr = np.array(draws, dtype=float)
+        return tuple(arr.mean(axis=0).tolist())
+
+    else:
+        raise ValueError(f"Unknown patch_mode: {patch_mode}")
+
 
 def make_env_for_config(env_name: str, g: float, l: float, seed: int):
     if env_name == "CartPoleSim":
@@ -65,12 +113,13 @@ def make_env_for_config(env_name: str, g: float, l: float, seed: int):
             gravity=g, mass1=1.0, mass2=0.0,
             length=l, dt=0.01,
             max_action=10.0, damping=0.0, seed=seed)
-    
+
+
 COLLECTOR = {
-    "num_trajectories" : 50,
-    "episode_time" : 100,
-    "policy_seed" : 35,
-    "save" : False,
+    "num_trajectories": 50,
+    "episode_time": 100,
+    "policy_seed": 35,
+    "save": False,
     "impulse_policy": False
 }
 
@@ -82,6 +131,10 @@ if __name__ == "__main__":
     parser = args.parse_args()
 
     device = parser.device
+
+    # Seeded RNG so the rand_dims control is reproducible.
+    rng = np.random.default_rng(35)
+
     pt_files_sample = glob.glob(str(parser.probes_dir / "*.npy"))
     if not pt_files_sample:
         raise ValueError("No probe files found")
@@ -92,7 +145,7 @@ if __name__ == "__main__":
     env_tag = "cartpole" if first_config["env"] == "CartPoleSim" else "pendulum"
     vae_tag = "vae" if first_config["model_name"] == "WorldModelVAE" else "novae"
     policy_tag = "sparse" if "sparse" in str(parser.probes_dir).lower() else "noise"
-    csv_path = Path(f"probe_results/activation_patch_seedtest_{env_tag}_{policy_tag}_{vae_tag}.csv")
+    csv_path = Path(f"patch_results/activation_patch_seedtest_{env_tag}_{policy_tag}_{vae_tag}.csv")
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     write_header = not csv_path.exists()
     csv_file = open(csv_path, "a", newline="")
@@ -100,7 +153,7 @@ if __name__ == "__main__":
     if write_header:
         writer.writerow([
             "checkpoint", "target_var", "policy_tag", "eval_config",
-            "latent_dim", "k", "top_k", "is_ood", "random_patch",
+            "latent_dim", "k", "top_k", "is_ood", "patch_mode",
             "shift", "shift_source",
             "baseline_err", "patched_err",
             "baseline_err_source", "patched_err_source"
@@ -181,16 +234,17 @@ if __name__ == "__main__":
             for top_k in [1, 2, 3, 4, 5]:
                 angular_dims = get_angular_dims(Path(probe_coef), top_k=top_k)
 
-                for random_patch in [False, True]:
+                for patch_mode in ["real", "rand_values", "rand_dims"]:
                     shift, shift_source, bl_err, pt_err, bl_err_src, pt_err_src = patch_trajectories(
-                        model, source_flat, target_flat, angular_dims, random_patch=random_patch
+                        model, source_flat, target_flat, angular_dims,
+                        patch_mode=patch_mode, rng=rng
                     )
-                    print(f"    top_k={top_k} random={random_patch} | "
-                            f"shift={shift:.4f} shift_src={shift_source:.4f}")
+                    print(f"    top_k={top_k} mode={patch_mode:11s} | "
+                          f"shift={shift:.4f} shift_src={shift_source:.4f}")
 
                     writer.writerow([
                         checkpoint_name, target_var, policy_tag, eval_tag,
-                        config["latent"], config["k"], top_k, is_ood, random_patch,
+                        config["latent"], config["k"], top_k, is_ood, patch_mode,
                         round(shift, 6), round(shift_source, 6),
                         round(bl_err, 6), round(pt_err, 6),
                         round(bl_err_src, 6), round(pt_err_src, 6)
