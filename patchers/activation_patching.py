@@ -18,7 +18,6 @@ ALL_CONFIGS = [
     (15.0, 2.0), (15.0, 10.0), (15.0, 18.0),
 ]
 
-# Number of random dimension draws to average over for the rand_dims control.
 N_RAND_DIM_DRAWS = 10
 
 
@@ -81,11 +80,8 @@ def patch_trajectories(model: WorldModel | ProtocolAModel | ProtocolBModel,
     elif patch_mode == "rand_dims":
         if rng is None:
             raise ValueError("rand_dims requires an rng")
-        # Avoid picking the probe-selected dims themselves so the control is a
-        # genuine "different location" comparison.
         probe_set = set(int(d) for d in angular_dims)
         candidates = np.array([d for d in range(latent_dim) if d not in probe_set])
-        # If there aren't enough non-probe dims, fall back to sampling from all dims.
         pool = candidates if len(candidates) >= k else np.arange(latent_dim)
 
         draws = []
@@ -94,7 +90,6 @@ def patch_trajectories(model: WorldModel | ProtocolAModel | ProtocolBModel,
             z_patched = z_target.clone()
             z_patched[:, dims] = z_source[:, dims]
             draws.append(_shift_from_patched(model, z_source, z_target, z_patched, action, source_traj))
-        # Average each returned metric across draws.
         arr = np.array(draws, dtype=float)
         return tuple(arr.mean(axis=0).tolist())
 
@@ -132,7 +127,6 @@ if __name__ == "__main__":
 
     device = parser.device
 
-    # Seeded RNG so the rand_dims control is reproducible.
     rng = np.random.default_rng(35)
 
     pt_files_sample = glob.glob(str(parser.probes_dir / "*.npy"))
