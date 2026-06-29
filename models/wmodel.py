@@ -24,6 +24,21 @@ class WorldModel(nn.Module):
         s_next = self.decode(z_next)
         return s_next, z
     
+    def layer_spec(self) -> dict:
+        return {
+            "encoder_early":    self.encoder.net[1],
+            "encoder_late":     self.encoder.net[3],
+            "transition_early": self.transition.net[1],
+            "transition_late":  self.transition.net[3],
+            "decoder_early":    self.decoder.net[1],
+            "decoder_late":     self.decoder.net[3],
+        }
+    def layer_timesteps(self) -> dict:
+        return {
+            "encoder_early": "current", "encoder_late": "current", "latent": "current",
+            "transition_early": "next", "transition_late": "next",
+            "decoder_early": "next", "decoder_late": "next",
+        }
 
 class WorldModelVAE(nn.Module):
     def __init__(self, model, state_dim: int, action_dim: int, 
@@ -54,3 +69,20 @@ class WorldModelVAE(nn.Module):
         z_next = self.step(z, a)
         s_next = self.decode(z_next)
         return s_next, z
+    
+    def layer_spec(self) -> dict:
+        return {
+            "encoder_early":    self.encoder.net[1],
+            "encoder_late":     self.encoder.net[3],
+            "transition_early": self.transition.net[1],
+            "transition_late":  self.transition.net[3],
+            "decoder_early":    self.decoder.net[1],
+            "decoder_late":     self.decoder.net[3],
+        }
+    
+    def layer_timesteps(self) -> dict:
+        return{
+            "encoder_early": "current", "encoder_late": "current", "latent": "current",
+            "transition_early": "next", "transition_late": "next",
+            "decoder_early": "next", "decoder_late": "next",
+        }
