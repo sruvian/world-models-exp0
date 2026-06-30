@@ -24,6 +24,7 @@ datasets:
     - "datasets/impulse_policy/v0_CartPoleSim_*gravity9.800*_length10.000.npz"
 # Model
 model:
+  seed: 100
   run_model: true
   name: WorldModel
   state_dim: 5

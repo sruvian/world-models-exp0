@@ -13,8 +13,9 @@ from models.wmodel import WorldModelVAE
 def split_gen(states: np.ndarray | torch.Tensor,
               actions: np.ndarray | torch.Tensor,
               rollout: int = 1, device: str = "cpu",
-              windows_per_traj: int = 1) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-
+              windows_per_traj: int = 1,
+              split_seed: int = 42) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    rng = np.random.default_rng(split_seed)
     if isinstance(states, torch.Tensor):
         states = states.numpy()
     if isinstance(actions, torch.Tensor):
@@ -24,7 +25,7 @@ def split_gen(states: np.ndarray | torch.Tensor,
     all_states, all_actions, all_nxt = [], [], []
 
     for i in range(N):
-        start_idxs = np.random.randint(0, T - rollout, size=windows_per_traj)
+        start_idxs = rng.integers(0, T - rollout, size=windows_per_traj)
         for s in start_idxs:
             all_states.append(states[i, s:s+rollout])
             all_actions.append(actions[i, s:s+rollout])
@@ -35,7 +36,7 @@ def split_gen(states: np.ndarray | torch.Tensor,
     all_nxt = np.array(all_nxt, dtype=np.float32)
 
     M = all_states.shape[0]
-    perm = np.random.permutation(M)
+    perm = rng.permutation(M)
     train_idx = int(0.9 * M)
 
     all_states = all_states[perm]

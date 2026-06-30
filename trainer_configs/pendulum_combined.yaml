@@ -24,6 +24,7 @@ datasets:
 
 # Model Parameterrs
 model:
+  seed: 100
   run_model: true
   name: WorldModelVAE
   state_dim: 3

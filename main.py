@@ -63,10 +63,14 @@ if __name__=="__main__":
         all_metadata.append(metadata)
 
     model_params = {k: v for k, v in model_config.items() 
-                        if k not in ("name", "run_model")}
+                        if k not in ("name", "run_model", "seed")}
 
     if model_config["run_model"] and trainer_config["run_trainer"]:
-        
+        seed = model_config["seed"]
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        if device == "cuda":
+            torch.cuda.manual_seed_all(seed)
         model = make_model(model_config["name"], **model_params).to(device)
 
         if hyperparams_config["optimizer"] not in opts:
@@ -110,12 +114,12 @@ if __name__=="__main__":
         
         if model_config['name'] == "WorldModelVAE":
             log_path = os.path.join(log_dir, 
-            f"log_{model_config['name']}_{config_tag}"
+            f"log_{model_config['name']}_{seed}_{config_tag}"
             f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
             f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}_beta{hyperparams_config['beta']}.npz")
         else:
             log_path = os.path.join(log_dir, 
-                f"log_{model_config['name']}_{config_tag}"
+                f"log_{model_config['name']}_{seed}_{config_tag}"
                 f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
                 f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}.npz")
         logger.save(log_path, yaml_out["datasets"]["use_existing"], yaml_out["datasets"]["paths"])
@@ -128,7 +132,7 @@ if __name__=="__main__":
 
                 checkpoint_path = os.path.join(
                     model_save_path,
-                    f"model_{model_config['name']}_{config_tag}"
+                    f"model_{model_config['name']}_{seed}_{config_tag}"
                     f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
                     f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}_beta{hyperparams_config['beta']}.pt"
                 )
@@ -136,7 +140,7 @@ if __name__=="__main__":
             else:
                 checkpoint_path = os.path.join(
                 model_save_path,
-                f"model_{model_config['name']}_{config_tag}"
+                f"model_{model_config['name']}_{seed}_{config_tag}"
                 f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
                 f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}.pt"
             )

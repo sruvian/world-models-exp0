@@ -20,6 +20,7 @@ CHANGES = {
     # "collector.save": False,
     # "collector.impulse_policy": True
     # "settings.device": "cpu"
+    "model.seed": 100
 }
 
 def set_nested(config, dotted_key, value):
@@ -50,16 +51,16 @@ def patch_yaml_inplace(path, changes):
         parts = dotted_key.split(".")
         section = parts[-2] if len(parts) > 1 else None
         leaf_key = parts[-1]
-        
+
         in_section = False
+        replaced = False
         for i, line in enumerate(lines):
             stripped = line.lstrip()
-            # track which section we're in
             if section and line.strip() == f"{section}:":
                 in_section = True
                 continue
             if in_section and not line.startswith(" ") and line.strip().endswith(":"):
-                in_section = False  # moved to new section
+                in_section = False
             if (in_section or section is None) and stripped.startswith(f"{leaf_key}:"):
                 indent = line[: len(line) - len(stripped)]
                 comment = ""
@@ -67,7 +68,32 @@ def patch_yaml_inplace(path, changes):
                 if "#" in val_part:
                     comment = "  " + val_part[val_part.index("#"):]
                 lines[i] = f"{indent}{leaf_key}: {format_val(new_val)}{comment}\n"
+                replaced = True
                 break
+
+        if not replaced:
+            if section is None:
+                if lines and not lines[-1].endswith("\n"):
+                    lines[-1] += "\n"
+                lines.append(f"{leaf_key}: {format_val(new_val)}\n")
+            else:
+                inserted = False
+                for i, line in enumerate(lines):
+                    if line.strip() == f"{section}:":
+                        indent = "  "
+                        for j in range(i + 1, len(lines)):
+                            nxt = lines[j]
+                            if nxt.strip() == "":
+                                continue
+                            child_indent = nxt[: len(nxt) - len(nxt.lstrip())]
+                            if child_indent:
+                                indent = child_indent
+                            break
+                        lines.insert(i + 1, f"{indent}{leaf_key}: {format_val(new_val)}\n")
+                        inserted = True
+                        break
+                if not inserted:
+                    print(f"  WARNING: section '{section}' not found for {dotted_key}, skipped")
 
     return lines, edits
 
