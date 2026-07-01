@@ -1,6 +1,6 @@
 from .simplenn import SimpleNN
 from .model import make_model
-from .wmodel import WorldModel
+from .wmodel import WorldModel, WorldModelVAE, WorldModelDMD, WorldModelGRU
 from .transfer import ProtocolAModel, ProtocolBModel
 
 __all__ = [
