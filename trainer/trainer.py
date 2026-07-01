@@ -7,7 +7,7 @@ from models import WorldModel
 import tqdm
 
 from models.transfer import ProtocolAModel, ProtocolBModel
-from models.wmodel import WorldModelVAE
+from models.wmodel import WorldModelDMD, WorldModelVAE, WorldModelGRU
 
 
 def split_gen(states: np.ndarray | torch.Tensor,
@@ -136,6 +136,8 @@ def trainer(
         optimizer.zero_grad()
         if isinstance(model, WorldModelVAE):
             total_loss = rollout_loss_vae(model, c_train_s, c_train_a, c_train_n_s, loss_func, rollout_func, device = train_states.device, beta = beta)
+        elif isinstance(model, WorldModelGRU):
+            total_loss = rollout_loss_gru(model, c_train_s, c_train_a, c_train_n_s, loss_func, rollout_func, device = train_states.device)
         else:
             total_loss = rollout_loss(model, c_train_s, c_train_a, c_train_n_s, loss_func, rollout_func, device = train_states.device)
 
@@ -150,6 +152,8 @@ def trainer(
                 val_idx = torch.randint(0, val_states.shape[0], (batch_size,), device=val_states.device)
                 if isinstance(model, WorldModelVAE):
                     val_loss = rollout_loss_vae_val(model, val_states[val_idx], val_actions[val_idx], val_next_states[val_idx], loss_func, rollout_func, device = train_states.device, beta = beta)
+                elif isinstance(model, WorldModelGRU):
+                    val_loss = rollout_loss_gru(model, c_train_s, c_train_a, c_train_n_s, loss_func, rollout_func, device = train_states.device)
                 else:
                     val_loss = rollout_loss(model, val_states[val_idx], val_actions[val_idx], val_next_states[val_idx], loss_func, rollout_func, device = train_states.device)
             model.train()
@@ -189,7 +193,6 @@ def rollout_loss_vae(model: WorldModelVAE, states: torch.Tensor, actions: torch.
     total_loss += beta * kl
     return total_loss
 
-
 def rollout_loss_vae_val(model, states, actions, next_states,
                           loss_func, rollout_func, beta, device):
     K = states.shape[1]
@@ -204,6 +207,20 @@ def rollout_loss_vae_val(model, states, actions, next_states,
         weight = rollout_func(K, k)
         total_loss += weight * loss_func(s_hat, next_states[:, k, :])
     total_loss += beta * kl
+    return total_loss
+
+def rollout_loss_gru(model: WorldModelGRU, states: torch.Tensor, actions: torch.Tensor, next_states: torch.Tensor,
+                     loss_func: torch.nn.Module, rollout_func: Callable, device: torch.device):
+    K = states.shape[1]
+    h = model.encode(states[:, 0, :])
+    total_loss = torch.zeros(1, device=device)
+    for k in range(K):
+        a_k = actions[:, k].unsqueeze(-1)
+        h = model.step(h, a_k)
+        z = model.probe_state(h)
+        s_hat = model.decode(z)
+        weight = rollout_func(K, k)
+        total_loss += weight * loss_func(s_hat, next_states[:, k, :])
     return total_loss
 
 def lin_dec(K, k, gamma):

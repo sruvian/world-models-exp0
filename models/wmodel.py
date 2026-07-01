@@ -1,6 +1,8 @@
+from typing import Any
+
 import torch
 import torch.nn as nn
-from .simplenn import VAEEncoder
+from .simplenn import VAEEncoder, DMDTransition
 
 class WorldModel(nn.Module):
     def __init__(self, model, state_dim: int, action_dim: int, hidden_dim: int, latent_dim: int) -> None:
@@ -86,3 +88,67 @@ class WorldModelVAE(nn.Module):
             "transition_early": "next", "transition_late": "next",
             "decoder_early": "next", "decoder_late": "next",
         }
+
+class WorldModelDMD(nn.Module):
+
+    def __init__(self, model, state_dim: int, action_dim: int, hidden_dim: int, latent_dim: int) -> None:
+        super().__init__()
+        self.encoder = model(state_dim, hidden_dim, latent_dim)
+        self.transition = DMDTransition(action_dim, latent_dim)
+        self.decoder = model(latent_dim, hidden_dim, state_dim)
+
+    def encode(self, s: torch.Tensor) -> torch.Tensor:
+        return self.encoder(s)
+
+    def step(self, z: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
+        return self.transition(z, a)
+
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        return self.decoder(z)
+    
+    def forward(self, s: torch.Tensor, a: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        z = self.encode(s)
+        z_next = self.step(z, a)
+        s_next = self.decode(z_next)
+        return s_next, z
+    
+    def layer_spec(self) -> dict:
+        return {
+            "encoder_early":    self.encoder.net[1],
+            "encoder_late":     self.encoder.net[3],
+            "decoder_early":    self.decoder.net[1],
+            "decoder_late":     self.decoder.net[3],
+        }
+    
+    def layer_timesteps(self) -> dict:
+        return{
+            "encoder_early": "current", "encoder_late": "current", "latent": "current",
+            "decoder_early": "next", "decoder_late": "next",
+        }
+
+class WorldModelGRU(nn.Module):
+
+    def __init__(self, model, state_dim: int, action_dim: int, hidden_dim: int, latent_dim: int) -> None:
+        super().__init__()
+        self.encoder = model(state_dim, hidden_dim, hidden_dim)
+        self.transition = nn.GRUCell(action_dim, hidden_dim)
+        self.decoder = model(latent_dim, hidden_dim, state_dim)
+        self.readout = nn.Linear(hidden_dim, latent_dim)
+
+    def encode(self, x):
+        return self.encoder(x)
+    
+    def step(self, h, a):
+        return self.transition(a, h)
+    
+    def probe_state(self, h):
+        return self.readout(h)
+    
+    def decode(self, z):
+        return self.decoder(z)
+    
+    def forward(self, x, a):
+        h = self.encode(x)
+        h_next = self.step(h, a)
+        z = self.probe_state(h_next)
+        return self.decode(z), z

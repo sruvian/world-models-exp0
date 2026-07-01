@@ -45,3 +45,15 @@ class VAEEncoder(nn.Module):
         eps = torch.randn_like(std)
         z = mu + eps * std
         return z, mu, log_var
+
+
+class DMDTransition(nn.Module):
+
+    def __init__(self, action_dim:int, latent_dim: int) -> None:
+        super().__init__()
+
+        self.A = nn.Linear(latent_dim, latent_dim, bias = False)
+        self.control = nn.Linear(action_dim, latent_dim, bias = False)
+
+    def forward(self, z, a):
+        return self.A(z) + self.control(a)

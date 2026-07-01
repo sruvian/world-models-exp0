@@ -144,7 +144,7 @@ if __name__ == "__main__":
         if changed:
             print(f"\n{fname}:")
             for leaf, old, new in changed:
-                print(f"  {leaf}: {old} → {new}")
+                print(f"  {leaf}: {old} -> {new}")
             if not parser.dry_run:
                 with open(path, 'w') as f:
                     f.writelines(new_lines)

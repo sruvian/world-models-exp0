@@ -11,3 +11,4 @@ patch_results/*
 model_saves_seed/
 seed_configs/
 logs/
+logfiles_seeds/

@@ -99,9 +99,15 @@ if __name__=="__main__":
                                 hyperparams_config["rollout_decay"], hyperparams_config["gamma"], trainer_config["log_interval"], hyperparams_config["beta"])
         logger.finish()
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        base_dir = os.path.join(base_dir, "logfiles")
+        base_dir = os.path.join(base_dir, "logfiles_seeds")
         if model_config['name'] == "WorldModelVAE":
             base_dir = os.path.join(base_dir, "vae")
+        elif model_config['name'] == "WorldModelDMD":
+            base_dir = os.path.join(base_dir, "dmd")
+        elif model_config['name'] == "WorldModelRSSM":
+            base_dir = os.path.join(base_dir, "gru")
+        elif model_config['name'] == "WorldModelRSSM":
+            base_dir = os.path.join(base_dir, "rssm")    
         if collector_config["impulse_policy"]:
             base_dir = os.path.join(base_dir, "impulse_policy")
         if env_config['name'] == "CartPoleSim":
