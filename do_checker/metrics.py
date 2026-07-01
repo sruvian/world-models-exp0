@@ -39,3 +39,18 @@ def null_summary(null_dicts):
             "null_95": float(np.nanpercentile(slopes, 95)),
             "null_max": float(np.nanmax(slopes)),
             "null_slopes": slopes}
+
+
+def pca_operator(dz: torch.Tensor, probe_direction: np.ndarray)->dict:
+    D = dz.detach().numpy()
+    Dn = D / (np.linalg.norm(D, axis=1, keepdims=True) + 1e-9)
+    U, S, Vt = np.linalg.svd(Dn, full_matrices=False)
+    var = (S**2) / (S**2).sum()
+    pc1 = Vt[0]
+    w = probe_direction / np.linalg.norm(probe_direction)
+    return {
+        "pc1_var": float(var[0]),
+        "top3_var": float(var[:3].sum()),
+        "dz_pc1_cos": float(np.mean(np.abs(Dn @ pc1))),
+        "pc1_probe_cos": float(abs(pc1 @ w)),
+    }

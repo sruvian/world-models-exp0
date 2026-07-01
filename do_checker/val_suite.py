@@ -88,16 +88,17 @@ class ValidationSuite:
                                                        rand, rand_tv, action, target_states))
 
         null = null_summary(null_dicts)
-        probe_frac = probe_result["fraction"]
+        probe_slope = probe_result["slope"]
         return {
             "ceiling_err": float(final_error),
-            "probe_slope": probe_result["slope"],
+            "probe_slope": probe_slope,
             "probe_survival": probe_result["survival"],
             **null,
-            "clears_null": bool(probe_result["slope"] > null["null_95"]),
+            "clears_null": bool(probe_slope > null["null_95"]),
             "dz_probe_cossim": cos_sim_dz,
             "probe_result": probe_result,
             "null_dicts": null_dicts,
+            **pca_operator(dz, probe_direction), 
         }
 
 
