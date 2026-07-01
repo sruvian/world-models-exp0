@@ -20,7 +20,7 @@ CHANGES = {
     # "collector.save": False,
     # "collector.impulse_policy": True
     # "settings.device": "cpu"
-    "model.seed": 100
+    # "model.seed": 100
 }
 
 def set_nested(config, dotted_key, value):
@@ -112,6 +112,7 @@ if __name__ == "__main__":
     args.add_argument("--dry_run", action="store_true")
     args.add_argument("--latent", type=int, default=None)
     args.add_argument("--k", type=int, default=None)
+    args.add_argument("--seed", type=int, default=None)
     args.add_argument('--beta', type = float, default = None)
     parser = args.parse_args()
 
@@ -122,7 +123,8 @@ if __name__ == "__main__":
         CHANGES["hyperparams.rollout_steps"] = parser.k
     if parser.beta is not None:
         CHANGES["hyperparams.beta"] = parser.beta
-
+    if parser.seed is not None:
+        CHANGES["model.seed"] = parser.seed
     if not CHANGES:
         print("No changes configured.")
         exit()

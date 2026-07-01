@@ -8,3 +8,6 @@ probe_results/
 visualiser/simple_eda*
 patch_results/*
 *.egg-info/
+model_saves_seed/
+seed_configs/
+logs/
