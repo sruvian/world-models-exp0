@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from logger.logger import Logger
+from models.wmodel import WorldModelGRU, WorldModelRSSM
 from sim_envs.envs import make_env
 from models.model import make_model
 from collector.collect import collect_trajectories
@@ -82,15 +83,22 @@ if __name__=="__main__":
         if states is None or actions is None:
             raise ValueError("Run the collector or use an existing dataset")
         paths = yaml_out["datasets"]["paths"]
-        is_combined = yaml_out["datasets"]["use_existing"] and len(matched_files) > 1
+        if yaml_out["datasets"]["use_existing"] and yaml_out['datasets']['regime'] != "single":
+            config_tag = yaml_out['datasets']['regime']
+        else:
+            config_tag = f"g{env_config['gravity']}_l{env_config.get('length', 0.0)}"
+        # is_combined = yaml_out["datasets"]["use_existing"] and len(matched_files) > 1
 
-        config_tag = "combined" if is_combined else f"g{env_config['gravity']}_l{env_config.get('length', 0.0)}"
+        
         # if config_tag == "combined":
         #     train_s, train_s_next, train_a, val_s, val_s_next, val_a = stratified_split_gen(states, actions, hyperparams_config["rollout_steps"], device)
         #     config_tag = "combinedstratified"
         # else:
         #     train_s, train_s_next, train_a, val_s, val_s_next, val_a = split_gen(states, actions, hyperparams_config["rollout_steps"], device)
-        train_s, train_s_next, train_a, val_s, val_s_next, val_a = split_gen(states, actions, hyperparams_config["rollout_steps"], device)
+        val_horizon = None
+        if isinstance(model, WorldModelGRU) or isinstance(model, WorldModelRSSM):
+            val_horizon = hyperparams_config['rollout_steps']
+        train_s, train_s_next, train_a, val_s, val_s_next, val_a = split_gen(states, actions, hyperparams_config["rollout_steps"],  device, windows_per_traj=1, val_horizon=val_horizon)
         logger = Logger(model_config["name"], hyperparams_config["optimizer"], hyperparams_config["loss"], 
                 hyperparams_config["lr"], trainer_config["batch_size"], trainer_config["steps"],
                 env_config["gravity"], env_config.get("length", 0.0), model_config["latent_dim"], hyperparams_config["beta"])
@@ -99,15 +107,7 @@ if __name__=="__main__":
                                 hyperparams_config["rollout_decay"], hyperparams_config["gamma"], trainer_config["log_interval"], hyperparams_config["beta"])
         logger.finish()
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        base_dir = os.path.join(base_dir, "logfiles_seeds")
-        if model_config['name'] == "WorldModelVAE":
-            base_dir = os.path.join(base_dir, "vae")
-        elif model_config['name'] == "WorldModelDMD":
-            base_dir = os.path.join(base_dir, "dmd")
-        elif model_config['name'] == "WorldModelRSSM":
-            base_dir = os.path.join(base_dir, "gru")
-        elif model_config['name'] == "WorldModelRSSM":
-            base_dir = os.path.join(base_dir, "rssm")    
+        base_dir = os.path.join(base_dir, yaml_out['checkpointing']['logbase_dir'])
         if collector_config["impulse_policy"]:
             base_dir = os.path.join(base_dir, "impulse_policy")
         if env_config['name'] == "CartPoleSim":
@@ -118,7 +118,7 @@ if __name__=="__main__":
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
         
-        if model_config['name'] == "WorldModelVAE":
+        if model_config['name'] == "WorldModelVAE" or model_config["name"] == "WorldModelRSSM":
             log_path = os.path.join(log_dir, 
             f"log_{model_config['name']}_{seed}_{config_tag}"
             f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
@@ -132,9 +132,14 @@ if __name__=="__main__":
 
         if yaml_out["checkpointing"]["save"]:
             model_save_path = yaml_out["checkpointing"]["save_path"]
-            # if collector_config["impulse_policy"]:
-            #     model_save_path = os.path.join(model_save_path, "impulse_policy") 
-            if model_config['name'] == "WorldModelVAE":
+            if collector_config["impulse_policy"]:
+                model_save_path = os.path.join(model_save_path, "impulse_policy")
+            if env_config['name'] == "CartPoleSim":
+                model_save_path = os.path.join(model_save_path, "cartpole")
+            else:
+                model_save_path = os.path.join(model_save_path, "pendulum") 
+            os.makedirs(model_save_path, exist_ok= True)
+            if model_config['name'] == "WorldModelVAE" or model_config["name"] == "WorldModelRSSM":
 
                 checkpoint_path = os.path.join(
                     model_save_path,
@@ -150,6 +155,7 @@ if __name__=="__main__":
                 f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
                 f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}.pt"
             )
+            
             torch.save(trained_model.state_dict(), checkpoint_path)
             print(f"[CHECKPOINT] Saved to {checkpoint_path}")
 

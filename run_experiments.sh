@@ -2,8 +2,8 @@
 # run_experiments.sh
 # Usage: bash run_experiments.sh
 
-YAML_DIR="seed_configs/"
-LOG_DIR="logs/"
+YAML_DIR="gru_configs/"
+LOG_DIR="logs_gru/"
 mkdir -p $LOG_DIR
 
 run_batch() {
@@ -27,26 +27,26 @@ run_batch() {
 
 run_yaml_modifier() {
     local latent=$1
-    # local k=$2
-    local seed=$2
+    local k=$2
+
     python yaml_modifier.py \
         --yaml_dir $YAML_DIR \
         --latent $latent \
-        --seed $seed
+        --k $k
 }
 
 # ── Experiment grid ──────────────────────────────
-LATENTS=(3 8 16 32 64)
-# K_VALUES=(1 3 5)
-SEED_VALUES=(0 1 2 3 4)
-for seed in "${SEED_VALUES[@]}"; do
+LATENTS=(8 16 32 64)
+K_VALUES=(50)
+# SEED_VALUES=(0 1 2 3 4)
+for k in "${K_VALUES[@]}"; do
     for latent in "${LATENTS[@]}"; do
         echo "==============================="
-        echo "Running latent=$latent seed=$seed"
+        echo "Running latent=$latent k=$k"
         echo "==============================="
 
         # Step 1 — modify all yamls
-        run_yaml_modifier $latent $seed
+        run_yaml_modifier $latent $k
 
         # Step 2 — get all yamls
         yamls=($(ls $YAML_DIR/*.yaml))

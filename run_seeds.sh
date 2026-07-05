@@ -42,9 +42,9 @@ run_all_yamls() {
     echo "==============================="
     run_yaml_modifier "$latent" "$seed"
     local yamls=($(ls "$YAML_DIR"/*.yaml))
-    for ((i=0; i<${#yamls[@]}; i+=6)); do
-        batch=("${yamls[@]:i:6}")
-        echo "[BATCH $((i/6 + 1))] ${batch[@]}"
+    for ((i=0; i<${#yamls[@]}; i+=8)); do
+        batch=("${yamls[@]:i:8}")
+        echo "[BATCH $((i/8 + 1))] ${batch[@]}"
         run_batch "${batch[@]}"
     done
 }

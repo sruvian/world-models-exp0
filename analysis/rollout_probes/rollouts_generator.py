@@ -11,7 +11,7 @@ from rollout_engine import RolloutEngine
 from sim_envs.envs import make_env
 from collector import collect_trajectories
 from scipy.fft import fft
-from utils import parse_model
+from analysis.common.utils import parse_model
 
 
 

@@ -1,13 +1,14 @@
 import torch
 from models import WorldModel
 from models.transfer import ProtocolAModel, ProtocolBModel
-from models.wmodel import WorldModelVAE
+from models.wmodel import WorldModelDMD, WorldModelGRU, WorldModelVAE, WorldModelRSSM
 
 
 
 class RolloutEngine:
 
-    def __init__(self, model: WorldModel |ProtocolAModel| ProtocolBModel| WorldModelVAE, loss: torch.nn.Module):
+    def __init__(self, model: WorldModel |ProtocolAModel| ProtocolBModel| WorldModelVAE| WorldModelDMD| WorldModelGRU| WorldModelRSSM,
+                  loss: torch.nn.Module):
 
         self.model = model
         self.loss = loss
@@ -26,11 +27,11 @@ class RolloutEngine:
         
         preds = []
         with torch.inference_mode():
-            z = self.model.encode(states[:, 0, :])
+            z = self.model.encode_computational(states[:, 0, :])
             for k in range(horizon):
                 a_k = actions[:, k].unsqueeze(-1)
-                z = self.model.step(z, a_k)
-                s_hat = self.model.decode(z)
+                z = self.model.step_computational(z, a_k)
+                s_hat = self.model.decode_computational(z)
                 preds.append(s_hat)
                 total_loss += self.loss(s_hat, states[:, k + 1, :])
         preds = torch.stack(preds, dim=1)

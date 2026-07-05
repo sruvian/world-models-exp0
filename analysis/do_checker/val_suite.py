@@ -1,7 +1,7 @@
-from checker import DoChecker
+from analysis.do_checker.checker import DoChecker
 import numpy as np
 import torch
-from metrics import *
+from analysis.do_checker.metrics import *
 
 class ValidationSuite:
 
@@ -29,7 +29,8 @@ class ValidationSuite:
             
             optimiser.zero_grad()
             pred = self.checker.decode(self.checker.step((z + dz), action))
-            loss = ((target - pred)**2).sum() + self.lam_reg * (dz**2).sum()
+            channel_scale = target.std(dim=0) + 1e-6
+            loss = (((target - pred) / channel_scale)**2).sum() + self.lam_reg * (dz**2).sum()
             loss.backward()
             
             optimiser.step()
@@ -46,12 +47,18 @@ class ValidationSuite:
             delta_ground_truth, delta_model_shifts, on_manifold = self.checker.compare(state, source_config, target_config, probe_direction, target_value, action[i:i+1], 
                                                                                        target_state, )
             if on_manifold:
-                if channel == 1:
+                if channel is None:
+                    gt_vec = np.array(delta_ground_truth, dtype=float)
+                    model_vec = np.array(delta_model_shifts, dtype=float)
+                    gt_norm = np.linalg.norm(gt_vec) + 1e-9
+                    ground_truths.append(gt_norm)                              # oracle magnitude
+                    model_shifts.append(float(model_vec @ gt_vec / gt_norm))   # model shift along oracle direction
+                elif channel == 1:
                     ground_truth_theta = np.arctan2(delta_ground_truth[1], delta_ground_truth[0])
                     model_shift_theta = np.arctan2(delta_model_shifts[1], delta_model_shifts[0])
                     ground_truths.append(ground_truth_theta)
                     model_shifts.append(model_shift_theta)
-                else:    
+                else:
                     ground_truths.append(delta_ground_truth[channel])
                     model_shifts.append(delta_model_shifts[channel])
                 
@@ -73,7 +80,10 @@ class ValidationSuite:
         oracle_targets = torch.tensor(np.array(oracle_targets), dtype=torch.float32)
 
         dz, final_error, final_pred, latent = self.optimisation_bound(source_states, action, oracle_targets)
+        dz_opt, dy_opt = self.checker.optimal_intervention(source_states, oracle_targets, action)
+        cos_sim_dyzopt_dz = direction_alignment(dz, dz_opt)
         cos_sim_dz = direction_alignment(dz, probe_direction)
+        
         
         target_value = self.calibrate_target(calibration_pool, probe_direction)
         probe_result = self.direction_transport(source_states, source_config, target_config, channel,
@@ -90,15 +100,23 @@ class ValidationSuite:
         null = null_summary(null_dicts)
         probe_slope = probe_result["slope"]
         return {
-            "ceiling_err": float(final_error),
+
+            "ceiling_err": float(final_error),                    # how well the BEST patch achieves oracle target
+
+            "analytical_search_gap": float((dz_opt - dz).detach().norm()), # ~0 if pseudoinverse matches search
+            "dz_opt_cossim": cos_sim_dyzopt_dz,                   # cos(search δz, analytical δz) -> ~1 if theorem holds
+            "dy_opt_norm": float(dy_opt.detach().norm()),                  # achievable output effect magnitude
+
+            "dz_probe_cossim": cos_sim_dz,                        # cos(optimal δz, probe direction) -> LOW = dissociation
+
             "probe_slope": probe_slope,
             "probe_survival": probe_result["survival"],
             **null,
             "clears_null": bool(probe_slope > null["null_95"]),
-            "dz_probe_cossim": cos_sim_dz,
+
+            **pca_operator(dz, probe_direction),
             "probe_result": probe_result,
             "null_dicts": null_dicts,
-            **pca_operator(dz, probe_direction), 
         }
 
 

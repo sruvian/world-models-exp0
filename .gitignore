@@ -12,3 +12,16 @@ model_saves_seed/
 seed_configs/
 logs/
 logfiles_seeds/
+dmd_configs/
+model_saves_dmd/
+logfiles_dmd/
+logs_dmd/
+gru_configs/
+model_saves_dmd/
+logfiles_gru/
+logs_gru/
+model_saves_gru/
+rssm_configs/
+model_saves_rssm/
+logfiles_rssm/
+logs_rssm/

@@ -21,6 +21,10 @@ CHANGES = {
     # "collector.impulse_policy": True
     # "settings.device": "cpu"
     # "model.seed": 100
+    # "model.hidden_dim": 64
+    # "checkpointing.save_path": "model_saves_rssm",
+    # "checkpointing.logbase_dir": "logfiles_rssm",
+    # "model.name": "WorldModelRSSM"
 }
 
 def set_nested(config, dotted_key, value):

@@ -5,7 +5,7 @@ import argparse
 from pathlib import Path
 import glob
 from models import make_model
-from utils import parse_model
+from analysis.common.utils import parse_model
 from sim_envs import make_env
 from collector import collect_trajectories
 import csv
@@ -27,14 +27,14 @@ def get_angular_dims(probe_coef: Path, top_k: int = 3) -> np.ndarray:
 
 
 def _shift_from_patched(model, z_source, z_target, z_patched, action, source_traj):
-    """Step + decode source/target/patched latents and return shift metrics."""
-    z_source_step = model.step(z_source, action)
-    z_target_step = model.step(z_target, action)
-    z_patched_step = model.step(z_patched, action)
 
-    s_hat_baseline = model.decode(z_target_step)
-    s_hat_patched = model.decode(z_patched_step)
-    s_hat_source = model.decode(z_source_step)
+    z_source_step = model.step_computational(z_source, action)
+    z_target_step = model.step_computational(z_target, action)
+    z_patched_step = model.step_computational(z_patched, action)
+
+    s_hat_baseline = model.decode_computational(z_target_step)
+    s_hat_patched = model.decode_computational(z_patched_step)
+    s_hat_source = model.decode_computational(z_source_step)
 
     baseline_err = ((s_hat_baseline[:, :2] - s_hat_source[:, :2]) ** 2).mean().sqrt().item()
     patched_err = ((s_hat_patched[:, :2] - s_hat_source[:, :2]) ** 2).mean().sqrt().item()
@@ -50,17 +50,9 @@ def patch_trajectories(model: WorldModel | ProtocolAModel | ProtocolBModel,
                        source_traj: torch.Tensor, target_traj: torch.Tensor,
                        angular_dims, patch_mode: str = "real",
                        rng: np.random.Generator = None):
-    """
-    patch_mode:
-      "real"        -> real source values into probe-selected dims   (thesis condition)
-      "rand_values" -> random values into probe-selected dims        (tests contents)
-      "rand_dims"   -> real source values into randomly chosen dims  (tests location)
 
-    For "rand_dims" we average over N_RAND_DIM_DRAWS random dimension sets so the
-    control is not a single (possibly unlucky) draw.
-    """
-    z_source = model.encode(source_traj)
-    z_target = model.encode(target_traj)
+    z_source = model.encode_computational(source_traj)
+    z_target = model.encode_computational(target_traj)
     batch = source_traj.shape[0]
     action = torch.zeros(batch, 1)
 

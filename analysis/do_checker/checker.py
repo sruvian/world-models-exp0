@@ -2,8 +2,6 @@ import torch
 import numpy as np
 from sim_envs import make_env
 
-
-
 class DoChecker():
 
     def __init__(self, encode, step, decode, env, manifold_mult) -> None:
@@ -15,14 +13,14 @@ class DoChecker():
         self.manifold_mult = manifold_mult
 
     def validate(self, source_state: np.ndarray| torch.Tensor, target_state: torch.Tensor|None, source_config: dict, target_config:dict, action):
-
+        seed = 0
         source_theta = np.arctan2(source_state[1], source_state[0])
-        source_simulator = make_env(self.env, **source_config)
+        source_simulator = make_env(self.env, **source_config, seed = seed)
         source_simulator.reset()
         source_simulator.theta, source_simulator.theta_dot = source_theta, source_state[2]
         
 
-        target_simulator = make_env(self.env, **target_config)
+        target_simulator = make_env(self.env, **target_config, seed = seed)
         target_simulator.reset()
         if target_state is None:
             target_simulator.theta, target_simulator.theta_dot = source_theta, source_state[2]
@@ -52,18 +50,15 @@ class DoChecker():
                 probe_direction: np.ndarray, target_value, action: torch.Tensor, target_state: torch.Tensor | None = None ):
         
         ground_truth_source, ground_truth_target = self.validate(source_state, target_state, source_config, target_config, action)
-
-        patched_dict = self.intervene(source_state, target_value, probe_direction, action)
-        unpatched_dict = self.intervene(source_state, target_value, probe_direction, action, False)
+        state_2d = source_state.unsqueeze(0) if source_state.ndim == 1 else source_state
+        patched_dict = self.intervene(state_2d, target_value, probe_direction, action)
+        unpatched_dict = self.intervene(state_2d, target_value, probe_direction, action, False)
 
         if not patched_dict["on_manifold"]:
             print(f"Patch shift out of bounds! encoder_shift {patched_dict['shift_norm']:.2f} is {patched_dict['rel_shift']:.2f} times the latent!")
             delta_model = [np.nan]
         else: 
-            model_patched = patched_dict["decoder"]
-            model_unpatched = unpatched_dict["decoder"]
-            delta_model = (model_patched - model_unpatched).numpy()
-
+            delta_model = (patched_dict["decoder"] - unpatched_dict["decoder"]).squeeze(0).numpy()
         delta_ground_truth = ground_truth_target - ground_truth_source
         
 
@@ -76,3 +71,18 @@ class DoChecker():
                 "shift_norm": shift_norm,
                 "z_norm": z_norm,
                 "rel_shift": shift_norm/ z_norm}
+
+    def optimal_intervention(self, source_states, oracle_targets, action):
+        dz_opts, dy_opts = [], []
+        for i in range(len(source_states)):
+            z = self.encode(source_states[i:i+1]).detach().requires_grad_(True)
+            a = action[i:i+1]
+            def f(zz):
+                return self.decode(self.step(zz, a))
+            y = f(z)
+            J = torch.autograd.functional.jacobian(f, z).reshape(y.shape[-1], z.shape[-1])
+            residual = torch.as_tensor(oracle_targets[i], dtype=torch.float32) - y.squeeze(0)
+            dz_opt = torch.linalg.pinv(J) @ residual
+            dz_opts.append(dz_opt)
+            dy_opts.append(J @ dz_opt)
+        return torch.stack(dz_opts), torch.stack(dy_opts)

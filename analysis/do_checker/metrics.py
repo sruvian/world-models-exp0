@@ -22,16 +22,15 @@ def transport_metrics(gtruths: np.ndarray, mshifts: np.ndarray, n_total: int) ->
             "gtruths": gtruths, "mshifts": mshifts}
 
 
-def direction_alignment(dz, w) -> float:
-    w = torch.from_numpy(w) if isinstance(w, np.ndarray) else w
-    w = w.flatten().to(dz.dtype)
-    if dz.dim() == 1:
-        dz = dz.unsqueeze(0)
-    num = dz @ w
-    den = dz.norm(dim=1) * w.norm() + 1e-9
-    cos = (num / den).abs()
+def direction_alignment(A, B):
+    A = torch.as_tensor(A).reshape(A.shape[0] if hasattr(A,'shape') and len(A.shape)>1 else 1, -1).float()
+    B = torch.as_tensor(B).float()
+    if B.ndim == 1:
+        B = B.unsqueeze(0).expand(A.shape[0], -1)
+    else:
+        B = B.reshape(A.shape[0], -1)
+    cos = torch.nn.functional.cosine_similarity(A, B, dim=1).detach()
     return float(cos.mean())
-
 
 def null_summary(null_dicts):
     slopes = np.array([d["slope"] for d in null_dicts], dtype=float)
