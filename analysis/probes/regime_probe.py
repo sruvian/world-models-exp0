@@ -47,6 +47,7 @@ def build_protocol_model(config):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--models_dir", required=True)
+    ap.add_argument("--out_dir", required = True)
     ap.add_argument("--num_trajectories", type=int, default=50)
     ap.add_argument("--episode_time", type=int, default=500)
     ap.add_argument("--threshold", type=float, default=1e-3)
@@ -54,7 +55,7 @@ if __name__ == "__main__":
     args = ap.parse_args()
 
     for (env_tag, policy_tag, model_tag), files in iter_model_groups(args.models_dir).items():
-        csv_path = Path(f"probe_results/regime_probe_{env_tag}_{policy_tag}_{model_tag}.csv")
+        csv_path = Path(f"{args.out_dir}/regime_probe_{env_tag}_{policy_tag}_{model_tag}.csv")
         csv_path.parent.mkdir(parents=True, exist_ok=True)
         write_header = not csv_path.exists()
         csv_file = open(csv_path, "a", newline="")

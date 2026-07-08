@@ -7,14 +7,19 @@ def make_hook(acts, name):
     return fn
 
 def collect_activations(model, states, actions):
-    spec = model.layer_spec()
     acts = {}
+    spec = model.layer_spec() if hasattr(model, "layer_spec") else {}
     handles = [m.register_forward_hook(make_hook(acts, name)) for name, m in spec.items()]
     with torch.no_grad():
         c = model.encode_computational(states)
-        t = model.step_computational(c, actions)
-        _ = model.decode_computational(t)
+        if spec:
+            t = model.step_computational(c, actions)
+            _ = model.decode_computational(t)
     for handle in handles:
         handle.remove()
+    if isinstance(c, tuple):
+        c = c[1]
     acts["computational"] = c.detach()
-    return acts, model.layer_timesteps()
+    ts = model.layer_timesteps() if hasattr(model, "layer_timesteps") else {}
+    ts.setdefault("computational", "current")
+    return acts, ts

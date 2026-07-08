@@ -2,8 +2,8 @@
 # run_experiments.sh
 # Usage: bash run_experiments.sh
 
-YAML_DIR="gru_configs/"
-LOG_DIR="logs_gru/"
+YAML_DIR="rssm_configs/"
+LOG_DIR="logs_rssm/"
 mkdir -p $LOG_DIR
 
 run_batch() {

@@ -8,16 +8,25 @@ import csv
 import argparse
 from pathlib import Path
 from models import make_model
-from analysis.common import parse_model, load_model, iter_model_groups, get_data, HIDDEN_DIM
-from analysis.common import probeable_vars
+from analysis.common import parse_model, load_model, iter_model_groups, get_data, HIDDEN_DIM, probeable_vars
 
 def generate_latents(model, states: torch.Tensor) -> torch.Tensor:
     model.eval()
     with torch.inference_mode():
         N, T, state_dim = states.shape
         flat = states.reshape(-1, state_dim)
-        z = model.encode_computational(flat)
+        comp = model.encode_computational(flat)
+        z = model.probe_representation(comp)
         return z.reshape(N, T, -1)
+    
+def compute_mi(train_z, train_target, neighbours = 3, n_sub=3000):
+    n = train_z.shape[0]
+    if n > n_sub:
+        idx = np.random.default_rng(0).choice(n, n_sub, replace=False)
+        z_sub, t_sub = train_z[idx], train_target[idx]
+    else:
+        z_sub, t_sub = train_z, train_target
+    return float(mutual_info_regression(z_sub, t_sub, n_neighbors=neighbours).mean())
 
 def run_probe(train_z: np.ndarray, val_z: np.ndarray,
               train_target: np.ndarray, val_target: np.ndarray,
@@ -30,12 +39,10 @@ def run_probe(train_z: np.ndarray, val_z: np.ndarray,
     if np.abs(train_z).max() > 1e4:
         print(f"{label}: SKIPPED (latent explosion > 1e4)")
         return float('nan'), float('nan'), float('nan')
-    
     probe = Ridge(alpha=alpha)
     probe.fit(train_z, train_target)
     r2 = r2_score(val_target, probe.predict(val_z))
-
-    mi = float(mutual_info_regression(train_z, train_target, n_neighbors=3).mean())
+    mi = compute_mi(train_z, train_target)
 
     shuffled = train_target.copy()
     np.random.shuffle(shuffled)
@@ -106,19 +113,20 @@ if __name__ == "__main__":
     ap.add_argument("--models_dir", required=True)
     ap.add_argument("--alpha", type=float, default=10.0)
     ap.add_argument("--random_init", action="store_true")
+    ap.add_argument("--out_dir", required = True)
     ap.add_argument("--device", default="cpu")
     args = ap.parse_args()
 
     for (env_tag, policy_tag, model_tag), files in iter_model_groups(args.models_dir).items():
         tag = f"{env_tag}_{policy_tag}_{model_tag}"
-        output_csv = f"probe_results/linear_probe_{tag}.csv"
+        output_csv = f"{args.out_dir}/linear_probe_{tag}.csv"
         os.makedirs(os.path.dirname(output_csv), exist_ok=True)
         write_header = not os.path.exists(output_csv)
         csv_file = open(output_csv, "a", newline="")
         writer = csv.writer(csv_file)
         if write_header:
             writer.writerow(["checkpoint", "config", "latent_dim", "k", "target",
-                             "r2", "r2_shuffled", "delta", "mi_sum"])
+                             "r2", "r2_shuffled", "delta", "mi_mean"])
 
         for mf in files:
             cfg = parse_model(Path(mf))

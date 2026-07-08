@@ -6,6 +6,7 @@ from pathlib import Path
 import glob
 from models import make_model
 from analysis.common.utils import parse_model
+from models.wmodel import WorldModelDMD, WorldModelGRU, WorldModelRSSM
 from sim_envs import make_env
 from collector import collect_trajectories
 import csv
@@ -46,7 +47,7 @@ def _shift_from_patched(model, z_source, z_target, z_patched, action, source_tra
     return shift, shift_source, baseline_err, patched_err, baseline_err_source, patched_err_source
 
 
-def patch_trajectories(model: WorldModel | ProtocolAModel | ProtocolBModel,
+def patch_trajectories(model: WorldModel | WorldModelDMD| WorldModelGRU| WorldModelRSSM,
                        source_traj: torch.Tensor, target_traj: torch.Tensor,
                        angular_dims, patch_mode: str = "real",
                        rng: np.random.Generator = None):
@@ -55,38 +56,65 @@ def patch_trajectories(model: WorldModel | ProtocolAModel | ProtocolBModel,
     z_target = model.encode_computational(target_traj)
     batch = source_traj.shape[0]
     action = torch.zeros(batch, 1)
-
-    latent_dim = z_source.shape[1]
     k = len(angular_dims)
 
-    if patch_mode == "real":
-        z_patched = z_target.clone()
-        z_patched[:, angular_dims] = z_source[:, angular_dims]
-        return _shift_from_patched(model, z_source, z_target, z_patched, action, source_traj)
+    if isinstance(model, WorldModelRSSM):
+        latent_dim = z_source[1].shape[1]
+        h_ptc, z_ptc = z_target[0].clone(), z_target[1].clone()
+        if patch_mode == "real":
+            z_ptc[:, angular_dims] = z_source[1][:, angular_dims]
+            z_patched = (h_ptc, z_ptc)
+            return _shift_from_patched(model, z_source, z_target, z_patched, action, source_traj)
 
-    elif patch_mode == "rand_values":
-        z_patched = z_target.clone()
-        z_patched[:, angular_dims] = torch.randn_like(z_source[:, angular_dims])
-        return _shift_from_patched(model, z_source, z_target, z_patched, action, source_traj)
+        elif patch_mode == "rand_values":
+            z_ptc[:, angular_dims] = torch.randn_like(z_source[1][:, angular_dims])
+            z_patched = (h_ptc, z_ptc)
+            return _shift_from_patched(model, z_source, z_target, z_patched, action, source_traj)
 
-    elif patch_mode == "rand_dims":
-        if rng is None:
-            raise ValueError("rand_dims requires an rng")
-        probe_set = set(int(d) for d in angular_dims)
-        candidates = np.array([d for d in range(latent_dim) if d not in probe_set])
-        pool = candidates if len(candidates) >= k else np.arange(latent_dim)
+        elif patch_mode == "rand_dims":
+            if rng is None:
+                raise ValueError("rand_dims requires an rng")
+            probe_set = set(int(d) for d in angular_dims)
+            candidates = np.array([d for d in range(latent_dim) if d not in probe_set])
+            pool = candidates if len(candidates) >= k else np.arange(latent_dim)
 
-        draws = []
-        for _ in range(N_RAND_DIM_DRAWS):
-            dims = rng.choice(pool, size=k, replace=False)
-            z_patched = z_target.clone()
-            z_patched[:, dims] = z_source[:, dims]
-            draws.append(_shift_from_patched(model, z_source, z_target, z_patched, action, source_traj))
-        arr = np.array(draws, dtype=float)
-        return tuple(arr.mean(axis=0).tolist())
+            draws = []
+            for _ in range(N_RAND_DIM_DRAWS):
+                dims = rng.choice(pool, size=k, replace=False)
+                h_ptc, z_ptc = z_target[0].clone(), z_target[1].clone()
+                z_ptc[:, dims] = z_source[1][:, dims]
+                z_patched = (h_ptc, z_ptc)
+                draws.append(_shift_from_patched(model, z_source, z_target, z_patched, action, source_traj))
+            arr = np.array(draws, dtype=float)
+            return tuple(arr.mean(axis=0).tolist())
 
     else:
-        raise ValueError(f"Unknown patch_mode: {patch_mode}")
+        latent_dim = z_source.shape[1]
+        z_patched = z_target.clone()
+        if patch_mode == "real":
+            
+            z_patched[:, angular_dims] = z_source[:, angular_dims]
+            return _shift_from_patched(model, z_source, z_target, z_patched, action, source_traj)
+
+        elif patch_mode == "rand_values":
+            z_patched[:, angular_dims] = torch.randn_like(z_source[:, angular_dims])
+            return _shift_from_patched(model, z_source, z_target, z_patched, action, source_traj)
+
+        elif patch_mode == "rand_dims":
+            if rng is None:
+                raise ValueError("rand_dims requires an rng")
+            probe_set = set(int(d) for d in angular_dims)
+            candidates = np.array([d for d in range(latent_dim) if d not in probe_set])
+            pool = candidates if len(candidates) >= k else np.arange(latent_dim)
+
+            draws = []
+            for _ in range(N_RAND_DIM_DRAWS):
+                dims = rng.choice(pool, size=k, replace=False)
+                z_patched = z_target.clone()
+                z_patched[:, dims] = z_source[:, dims]
+                draws.append(_shift_from_patched(model, z_source, z_target, z_patched, action, source_traj))
+            arr = np.array(draws, dtype=float)
+            return tuple(arr.mean(axis=0).tolist())
 
 
 def make_env_for_config(env_name: str, g: float, l: float, seed: int):
@@ -114,6 +142,7 @@ if __name__ == "__main__":
     args = argparse.ArgumentParser()
     args.add_argument("--probes_dir", type=Path, required=True)
     args.add_argument("--models_dir", type=Path, required=True)
+    args.add_argument("--out_dir", required=True)
     args.add_argument("--device", type=str, default="cpu")
     parser = args.parse_args()
 
@@ -131,7 +160,7 @@ if __name__ == "__main__":
     env_tag = "cartpole" if first_config["env"] == "CartPoleSim" else "pendulum"
     vae_tag = "vae" if first_config["model_name"] == "WorldModelVAE" else "novae"
     policy_tag = "sparse" if "sparse" in str(parser.probes_dir).lower() else "noise"
-    csv_path = Path(f"patch_results/activation_patch_seedtest_{env_tag}_{policy_tag}_{vae_tag}.csv")
+    csv_path = Path(f"{parser.out_dir}/activation_patch_seedtest_{env_tag}_{policy_tag}_{vae_tag}.csv")
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     write_header = not csv_path.exists()
     csv_file = open(csv_path, "a", newline="")

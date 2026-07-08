@@ -223,11 +223,20 @@ class WorldModelRSSM(nn.Module):
     def decode(self, h, z):
         return self.decoder(torch.cat([h, z], dim=-1))
 
-    def encode_computational(self, s):      
-        h, _ = self.encode(s);  return h
-    def step_computational(self, h, a):     
-        z = self.probe_state(h)
-        h2 = self.gru(torch.cat([z, a], -1), h);  return h2
-    def decode_computational(self, h):      
-        return self.decode(h, self.probe_state(h))
-    def probe_representation(self, h):      return self.probe_state(h)
+    def encode_computational(self, s):
+        h, z_mu = self.encode(s)
+        return (h, z_mu)
+    
+    def step_computational(self, state, a):
+        h, z = state
+        h2 = self.gru(torch.cat([z, a], -1), h)
+        z2 = self.probe_state(h2)
+        return (h2, z2)
+
+    def decode_computational(self, state):
+        h, z = state
+        return self.decode(h, z)
+
+    def probe_representation(self, state):
+        h, z = state
+        return z 

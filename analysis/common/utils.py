@@ -58,7 +58,7 @@ def parse_model(path: Path) -> dict:
         if part in KNOWN_REGIMES:
             result["regime"] = part
             result["config"] = part
-            result["flag"] = (part == "combined")
+            result["flag"] = (part == "combined" or part == "holdg" or part == "holdl")
         # elif part.startswith("seed") and part[4:].isdigit():
         #     result["seed"] = int(part[4:])
         elif part.startswith("k") and part[1:].isdigit():

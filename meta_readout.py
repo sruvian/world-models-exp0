@@ -8,14 +8,32 @@ from analysis import parse_model, probeable_vars, make_metadata, INTERVENTION, p
 from models.model import make_model
 
 def readout_probe(z, target, **ctx):
+    finite = np.isfinite(z).all(axis=1) & np.isfinite(target)
+    if not finite.any():
+        return None                          
+    z, target = z[finite], target[finite]
+    if np.abs(z).max() > 1e4:
+        return None
+    if z.shape[0] > 100000:
+        idx = np.random.default_rng(0).choice(z.shape[0], 100000, replace=False)
+        z, target = z[idx], target[idx]
     return Ridge(alpha=ctx.get("alpha", 10.0)).fit(z, target).coef_
 
 def readout_ig(z, target, **ctx):
+    if ctx["channel"] is None:
+        return None
     model, channel, action = ctx["model"], ctx["channel"], ctx["action"]
     z_t = torch.tensor(z, dtype=torch.float32)
+    if z_t.shape[0] > 500:
+        idx = torch.randperm(z_t.shape[0])[:500]
+        z_t = z_t[idx]
     baseline = z_t.mean(0, keepdim=True)
     out_func = lambda zz: model.decode_computational(model.step_computational(zz, action.expand(zz.shape[0], -1)))[:, channel]
     ig = integrated_gradients(out_func, z_t, baseline, num_steps=50)
+    lhs = ig.sum(-1)
+    rhs = out_func(z_t) - out_func(baseline)
+    completeness_err = (lhs - rhs).abs().mean()
+    print(f"IG completeness error for channel {channel}: {completeness_err:.4f}")
     return ig.mean(0).detach().numpy()
 
 
@@ -39,6 +57,8 @@ if __name__ == "__main__":
 
         for mf in model_files:
             cfg = parse_model(Path(mf))
+            if cfg["regime"] is None:
+                continue
             is_cp = cfg["env"] == "CartPoleSim"
             model = load_model(mf, cfg, args.device)
 
@@ -56,6 +76,9 @@ if __name__ == "__main__":
                 ctx = {"model": model, "channel": INTERVENTION[variable].get("channel"),
                        "action": action, "alpha": 10.0}
                 direction = READOUT_METHODS[args.readout_type](z, target, **ctx)
+                if direction is None:
+                    print(f"  [skip] {variable}: non-finite latents")
+                    continue
                 meta = make_metadata(args.readout_type, variable, "computational",
                                      cfg["model_name"], cfg["latent"], cfg["regime"], cfg["seed"])
                 meta["checkpoint"] = Path(mf).name

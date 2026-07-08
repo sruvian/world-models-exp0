@@ -25,3 +25,15 @@ rssm_configs/
 model_saves_rssm/
 logfiles_rssm/
 logs_rssm/
+rssm_generated/
+yaml_generator.py
+analysis_dmd.py
+test_gru.py
+test_rssm.py
+linear_probes_*/
+lin_prb_*/
+jacobian_*/
+regime_probe_*/
+rollout_depth_*/
+temp_models/
+*tar.gz

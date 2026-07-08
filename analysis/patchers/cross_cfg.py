@@ -3,6 +3,7 @@ import numpy as np
 import torch
 from analysis.common.regime import checkable_vars, INTERVENTION
 from analysis.common.data_provider import collect_for_config
+from models.wmodel import WorldModelRSSM
 
 GRAVITIES = [5.0, 9.8, 15.0]
 LENGTHS   = [2.0, 10.0, 18.0]
@@ -48,27 +49,52 @@ def cross_config_patch(model, direction, meta, cfg, writer, device, rng,
 
         n = min(src_flat.shape[0], tgt_flat.shape[0])
         src_flat, tgt_flat = src_flat[:n], tgt_flat[:n]
+        if isinstance(model, WorldModelRSSM):
+            z_src = model.encode_computational(src_flat)
+            z_tgt = model.encode_computational(tgt_flat)
+            action = torch.zeros(n, 1, device=device)
 
-        z_src = model.encode_computational(src_flat)
-        z_tgt = model.encode_computational(tgt_flat)
-        action = torch.zeros(n, 1, device=device)
+            for top_k in top_ks:
+                dims = np.argsort(np.abs(direction))[-top_k:]
 
-        for top_k in top_ks:
-            dims = np.argsort(np.abs(direction))[-top_k:]
+                h_ptc, z_ptc = z_tgt[0].clone(), z_tgt[1].clone()
+                z_ptc[:, dims] = z_src[1][:, dims]
+                z_patched = (h_ptc, z_ptc)
+                s_tgt   = model.decode_computational(model.step_computational(z_tgt, action))
+                s_patch = model.decode_computational(model.step_computational(z_patched, action))
+                s_src   = model.decode_computational(model.step_computational(z_src, action))
 
-            z_patched = z_tgt.clone()
-            z_patched[:, dims] = z_src[:, dims]
-            s_tgt   = model.decode_computational(model.step_computational(z_tgt, action))
-            s_patch = model.decode_computational(model.step_computational(z_patched, action))
-            s_src   = model.decode_computational(model.step_computational(z_src, action))
+                base_dist  = ((s_tgt[:, :2]   - s_src[:, :2]) ** 2).mean().sqrt().item()
+                patch_dist = ((s_patch[:, :2] - s_src[:, :2]) ** 2).mean().sqrt().item()
+                shift = base_dist - patch_dist
 
-            base_dist  = ((s_tgt[:, :2]   - s_src[:, :2]) ** 2).mean().sqrt().item()
-            patch_dist = ((s_patch[:, :2] - s_src[:, :2]) ** 2).mean().sqrt().item()
-            shift = base_dist - patch_dist
+                writer.writerow([
+                    meta["checkpoint"], variable,
+                    f"src_g{g_src}_l{l_src}", f"tgt_g{g_tgt}_l{l_tgt}",
+                    cfg["latent"], cfg["k"], top_k,
+                    round(shift, 6), round(base_dist, 6), round(patch_dist, 6),
+                ])
+        else:
+            z_src = model.encode_computational(src_flat)
+            z_tgt = model.encode_computational(tgt_flat)
+            action = torch.zeros(n, 1, device=device)
 
-            writer.writerow([
-                meta["checkpoint"], variable,
-                f"src_g{g_src}_l{l_src}", f"tgt_g{g_tgt}_l{l_tgt}",
-                cfg["latent"], cfg["k"], top_k,
-                round(shift, 6), round(base_dist, 6), round(patch_dist, 6),
-            ])
+            for top_k in top_ks:
+                dims = np.argsort(np.abs(direction))[-top_k:]
+
+                z_patched = z_tgt.clone()
+                z_patched[:, dims] = z_src[:, dims]
+                s_tgt   = model.decode_computational(model.step_computational(z_tgt, action))
+                s_patch = model.decode_computational(model.step_computational(z_patched, action))
+                s_src   = model.decode_computational(model.step_computational(z_src, action))
+
+                base_dist  = ((s_tgt[:, :2]   - s_src[:, :2]) ** 2).mean().sqrt().item()
+                patch_dist = ((s_patch[:, :2] - s_src[:, :2]) ** 2).mean().sqrt().item()
+                shift = base_dist - patch_dist
+
+                writer.writerow([
+                    meta["checkpoint"], variable,
+                    f"src_g{g_src}_l{l_src}", f"tgt_g{g_tgt}_l{l_tgt}",
+                    cfg["latent"], cfg["k"], top_k,
+                    round(shift, 6), round(base_dist, 6), round(patch_dist, 6),
+                ])

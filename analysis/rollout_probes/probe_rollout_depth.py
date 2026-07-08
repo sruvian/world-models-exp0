@@ -46,17 +46,26 @@ ALL_CONFIGS = [
 
 PROBE_DEPTHS = [0, 1, 3, 5, 10, 15, 25, 50]
 
-
+def eval_cfg(cfg):
+    if cfg["regime"] == "combined":
+        return ALL_CONFIGS
+    elif cfg["regime"] == "holdg":
+        return [(9.8, l) for l in [2.0, 10.0, 18.0]]
+    elif cfg["regime"] == "holdl":
+        return [(g, 10.0) for g in [5.0, 9.8, 15.0]]
+    else:
+        return [(cfg["g"], cfg["l"])]
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--models_dir", required=True)
+    ap.add_argument("--out_dir", required=True)
     ap.add_argument("--alpha", type=float, default=10.0)
     ap.add_argument("--device", default="cpu")
     args = ap.parse_args()
 
     for (env_tag, policy_tag, model_tag), files in iter_model_groups(args.models_dir).items():
-        csv_path = Path(f"probe_results/probe_rollout_depth_{env_tag}_{policy_tag}_{model_tag}.csv")
+        csv_path = Path(f"{args.out_dir}/probe_rollout_depth_{env_tag}_{policy_tag}_{model_tag}.csv")
         csv_path.parent.mkdir(parents=True, exist_ok=True)
         write_header = not csv_path.exists()
         csv_file = open(csv_path, "a", newline="")
@@ -76,7 +85,7 @@ if __name__ == "__main__":
             print(f"\n[{Path(mf).name}]")
             model = load_model(mf, cfg, args.device)
             state_dim = 5 if cfg["env"] == "CartPoleSim" else 3
-            eval_configs = ALL_CONFIGS if cfg["flag"] else [(cfg["g"], cfg["l"])]
+            eval_configs = eval_cfg(cfg)
 
             for g_eval, l_eval in eval_configs:
                 states_t, actions_t = collect_for_config(g_eval, l_eval, cfg["env"], impulse)
@@ -96,7 +105,8 @@ if __name__ == "__main__":
 
                     if depth >= states_t.shape[1]:
                         break
-                    z_np = model.probe_representation(comp_current).numpy()
+                    with torch.inference_mode():
+                        z_np = model.probe_representation(comp_current).numpy()
                     s_true = states_t[:, depth, :]
 
                     theta_true = torch.atan2(s_true[:, 1], s_true[:, 0]).numpy()

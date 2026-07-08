@@ -5,10 +5,16 @@ from sklearn.linear_model import Ridge
 from sklearn.model_selection import train_test_split
 from sklearn.feature_selection import mutual_info_regression
 from analysis.common import parse_model, iter_model_groups, load_model, prepare_probe_data, probeable_vars, get_data
+from tqdm import tqdm
+import time
 
 
-def layer_mi(activation, target, n_seeds=5):
+def layer_mi(activation, target, n_seeds=5, n_sub=3000):
     X = activation.numpy() if hasattr(activation, "numpy") else activation
+    n = X.shape[0]
+    if n > n_sub:
+        idx = np.random.default_rng(0).choice(n, n_sub, replace=False)
+        X, target = X[idx], target[idx]
     mis, mis_shuf = [], []
     for seed in range(n_seeds):
         mis.append(mutual_info_regression(X, target, random_state=seed).mean())
@@ -18,18 +24,25 @@ def layer_mi(activation, target, n_seeds=5):
 
 
 def multilayer_probe(acts, timesteps, current_target, next_target, config_labels,
-                     n_seeds=20, alpha=10.0):
+                     n_seeds=5, alpha=10.0, n_sub=50000):
     results = {}
-    for layer_name, activation in acts.items():
+    rng0 = np.random.default_rng(0)
+    for layer_name, activation in tqdm(acts.items(), desc="layers", leave=False):
         X = activation.numpy() if hasattr(activation, "numpy") else activation
         y = current_target if timesteps.get(layer_name, "current") == "current" else next_target
+        cl = config_labels
+
+        if X.shape[0] > n_sub:
+            idx = rng0.choice(X.shape[0], n_sub, replace=False)
+            X, y, cl = X[idx], y[idx], config_labels[idx]
+
         r2s, base_r2s = [], []
         for seed in range(n_seeds):
-            Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.2, random_state=seed, stratify=config_labels)
+            Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.2, random_state=seed, stratify=cl)
             r2s.append(Ridge(alpha=alpha).fit(Xtr, ytr).score(Xte, yte))
             y_shuf = np.random.default_rng(seed).permutation(ytr)
             base_r2s.append(Ridge(alpha=alpha).fit(Xtr, y_shuf).score(Xte, yte))
-        mi_m, mi_s, mi_sh_m, mi_sh_s = layer_mi(activation, y, n_seeds=5)
+        mi_m, mi_s, mi_sh_m, mi_sh_s = layer_mi(X, y, n_seeds=5)   # X already subsampled
         results[layer_name] = {
             "r2_mean": float(np.mean(r2s)), "r2_std": float(np.std(r2s)),
             "baseline_mean": float(np.mean(base_r2s)),
@@ -42,12 +55,13 @@ def multilayer_probe(acts, timesteps, current_target, next_target, config_labels
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--models_dir", required=True)
+    ap.add_argument("--out_dir", required=True)
     ap.add_argument("--alpha", type=float, default=10.0)
     ap.add_argument("--device", default="cpu")
     args = ap.parse_args()
 
     for (env_tag, policy_tag, model_tag), files in iter_model_groups(args.models_dir).items():
-        csv_path = Path(f"probe_results/multilayer_probe_{env_tag}_{policy_tag}_{model_tag}.csv")
+        csv_path = Path(f"{args.out_dir}/multilayer_probe_{env_tag}_{policy_tag}_{model_tag}.csv")
         csv_path.parent.mkdir(parents=True, exist_ok=True)
         write_header = not csv_path.exists()
         csv_file = open(csv_path, "a", newline="")

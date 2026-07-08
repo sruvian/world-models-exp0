@@ -5,6 +5,40 @@ import numpy as np
 import torch
 from analysis.common import parse_model, iter_model_groups, load_model, collect_for_config
 
+
+def compute_jacobian_rssm(model, h, a):
+    """
+    h-recurrence Jacobian for RSSM: d h' / d h, where
+        z  = probe_state(h)              (prior mean, derived from h)
+        h' = GRU([z, a], h)
+    h : (hidden_dim,)   a : (action_dim,)
+    Returns (hidden_dim, hidden_dim) or None if degenerate.
+    """
+    h = h.detach().requires_grad_(True)
+    z = model.probe_state(h)                                   # z from h (prior mean)
+    h_next = model.gru(torch.cat([z, a], dim=-1).unsqueeze(0), h.unsqueeze(0)).squeeze(0)
+    J = torch.zeros(h_next.shape[0], h.shape[0])
+    for i in range(h_next.shape[0]):
+        grad = torch.autograd.grad(h_next[i], h, retain_graph=True)[0]
+        J[i] = grad.detach()
+    if not torch.isfinite(J).all() or J.abs().max() > 1e8:
+        return None
+    return J
+
+
+def action_jacobian_rssm(model, h, a):
+    """
+    Action Jacobian for RSSM: d h' / d a  (action-sensitivity of the recurrence).
+    """
+    a = a.detach().requires_grad_(True)
+    z = model.probe_state(h)                                   # z from h (h fixed here)
+    h_next = model.gru(torch.cat([z, a], dim=-1).unsqueeze(0), h.unsqueeze(0)).squeeze(0)
+    J_a = torch.zeros(h_next.shape[0])
+    for i in range(h_next.shape[0]):
+        grad = torch.autograd.grad(h_next[i], a, retain_graph=True)[0]
+        J_a[i] = grad.detach()
+    return J_a
+
 def compute_jacobian(model, z: torch.Tensor, a: torch.Tensor) -> torch.Tensor | None:
     z = z.detach().requires_grad_(True)
     z_next = model.step_computational(z.unsqueeze(0), a.unsqueeze(0)).squeeze(0)
@@ -25,60 +59,57 @@ def action_jacobian(model, z, a):
         J_a[i] = grad.detach()
     return J_a
 
-def jacobian_stats(J: torch.Tensor, g: float, l: float, dt: float = 0.01, env = "PendulumSim") -> dict:
+def jacobian_stats(J, g, l, dt=0.01, env="PendulumSim", recurrent=False) -> dict:
 
+    PyTorchLinAlgError = getattr(torch._C, "_LinAlgError", RuntimeError)
     if J is None:
-        nan = float('nan')
-        return {
-            "max_eig": nan, "min_eig": nan, "mean_eig": nan,
-            "unit_circle_frac": nan, "contracting_frac": nan, "expanding_frac": nan,
-            "spectral_radius": nan, "min_singular": nan, "condition_number": nan,
-            "mean_eig_phase": nan, "expected_phase": nan, "phase_error": nan,
-            "g_over_l": round(g / l, 6),
-            "j_a_max": nan, "j_a_mean": nan, "j_a_norm": nan,
-        }
-    eigenvalues = torch.linalg.eigvals(J)
-    magnitudes = eigenvalues.abs()
-    phases = torch.angle(eigenvalues)
-
-    _, S, _ = torch.linalg.svd(J)
-
-    if env == "CartPoleSim":
-        expected_phase = np.sqrt((1.1 *g) / (1.0 * l)) * dt
-        phase_error = round(float(abs(phases.abs().mean().item() - expected_phase)), 6)
+        return _nan_stats(g, l)
+    try:
+        eigenvalues = torch.linalg.eigvals(J)
+        magnitudes = eigenvalues.abs()
+        phases = torch.angle(eigenvalues)
+    except PyTorchLinAlgError:
+        return _nan_stats(g, l)
     
+
+    try:
+        _, S, _ = torch.linalg.svd(J)
+    except PyTorchLinAlgError:
+        # eigen worked but SVD didn't — record eigen stats, NaN the SVD ones
+        S = None
+    if recurrent:
+        expected_phase = float('nan')
+        phase_error = float('nan')
+        
+    if env == "CartPoleSim":
+            expected_phase = np.sqrt((1.1 * g) / (1.0 * l)) * dt
     else:
-        expected_phase = float(np.sqrt(g / l)  * dt)
-        phase_error = float(abs(phases.abs().mean().item() - expected_phase))
+        expected_phase = float(np.sqrt(g / l) * dt)
+    phase_error = float(abs(phases.abs().mean().item() - expected_phase))
 
-    return {
+    stats = {
         "max_eig":          round(float(magnitudes.max()), 6),
-
         "min_eig":          round(float(magnitudes.min()), 6),
-
         "mean_eig":         round(float(magnitudes.mean()), 6),
-
         "unit_circle_frac": round(float(((magnitudes > 0.95) & (magnitudes < 1.05)).float().mean()), 6),
-
         "contracting_frac": round(float((magnitudes < 0.95).float().mean()), 6),
-
         "expanding_frac":   round(float((magnitudes > 1.05).float().mean()), 6),
-
-        "spectral_radius":  round(float(S.max()), 6),
-
-        "min_singular":     round(float(S.min()), 6),
-
-        "condition_number": round(float(S.max() / (S.min() + 1e-8)), 6),
-
         "mean_eig_phase":   round(float(phases.abs().mean()), 6),
-
         "expected_phase":   round(expected_phase, 6),
-
-        "phase_error":      phase_error, 
-
+        "phase_error":      phase_error,
         "g_over_l":         round(g / l, 6),
     }
-
+    # SVD-derived stats (NaN if SVD failed)
+    if S is not None:
+        stats["spectral_radius"]  = round(float(S.max()), 6)
+        stats["min_singular"]     = round(float(S.min()), 6)
+        stats["condition_number"] = round(float(S.max() / (S.min() + 1e-8)), 6)
+    else:
+        stats["spectral_radius"]  = float('nan')
+        stats["min_singular"]     = float('nan')
+        stats["condition_number"] = float('nan')
+    return stats
+    
 
 ALL_CONFIGS = [
     (5.0,  2.0),  (5.0,  10.0), (5.0,  18.0),
@@ -96,17 +127,26 @@ COLLECTOR = {
         "save": False,
         "impulse_policy": False
     }
-
+def _nan_stats(g, l):
+    nan = float('nan')
+    return {
+        "max_eig": nan, "min_eig": nan, "mean_eig": nan,
+        "unit_circle_frac": nan, "contracting_frac": nan, "expanding_frac": nan,
+        "spectral_radius": nan, "min_singular": nan, "condition_number": nan,
+        "mean_eig_phase": nan, "expected_phase": nan, "phase_error": nan,
+        "g_over_l": round(g / l, 6),
+    }
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--models_dir", required=True)
+    ap.add_argument("--out_dir", required=True)
     ap.add_argument("--num_points", type=int, default=50)
     ap.add_argument("--device", default="cpu")
     args = ap.parse_args()
 
     for (env_tag, policy_tag, model_tag), files in iter_model_groups(args.models_dir).items():
-        csv_path = Path(f"jacobian_results/jacobian_{env_tag}_{args.num_points}_{policy_tag}_{model_tag}.csv")
+        csv_path = Path(f"{args.out_dir}/jacobian_{env_tag}_{args.num_points}_{policy_tag}_{model_tag}.csv")
         csv_path.parent.mkdir(parents=True, exist_ok=True)
         write_header = not csv_path.exists()
         f = open(csv_path, "a", newline="")
@@ -117,7 +157,7 @@ if __name__ == "__main__":
                 "max_eig", "min_eig", "mean_eig", "unit_circle_frac", "contracting_frac",
                 "expanding_frac", "spectral_radius", "min_singular", "condition_number",
                 "mean_eig_phase", "expected_phase", "phase_error",
-                "std_spectral_radius", "std_phase_error", "g_over_l", "is_ood",
+                "std_spectral_radius", "std_phase_error",  "j_a_max", "j_a_mean", "j_a_norm", "g_over_l", "is_ood",
             ])
 
         for mf in files:
@@ -138,14 +178,25 @@ if __name__ == "__main__":
                     s = states_t[ti, tt]
                     a = actions_t[ti, tt].unsqueeze(0)
                     with torch.enable_grad():
-                        comp = model.encode_computational(s.unsqueeze(0)).squeeze(0)
-                        J_s = compute_jacobian(model, comp, a)
-                        J_a = action_jacobian(model, comp, a)
+                        comp = model.encode_computational(s.unsqueeze(0))
+                        if isinstance(comp, tuple):                      # RSSM: (h, z) pair
+                            h = comp[0].squeeze(0)
+                            with torch.enable_grad():
+                                J_s = compute_jacobian_rssm(model, h, a)
+                                J_a = action_jacobian_rssm(model, h, a)
+                        else:                                            # MLP / DMD / GRU: tensor
+                            comp = comp.squeeze(0)
+                            with torch.enable_grad():
+                                J_s = compute_jacobian(model, comp, a)
+                                J_a = action_jacobian(model, comp, a)
+
                     stats = jacobian_stats(J_s, g_eval, l_eval, env=cfg["env"])
-                    if J_s is not None:
-                        stats["j_a_max"] = round(float(J_a.abs().max()), 6)
+                    if J_s is not None and J_a is not None:
+                        stats["j_a_max"]  = round(float(J_a.abs().max()), 6)
                         stats["j_a_mean"] = round(float(J_a.abs().mean()), 6)
                         stats["j_a_norm"] = round(float(torch.norm(J_a)), 6)
+                    else:
+                        stats["j_a_max"] = stats["j_a_mean"] = stats["j_a_norm"] = float('nan')
                     all_stats.append(stats)
 
                 avg = {k: round(float(np.mean([s[k] for s in all_stats])), 6) for k in all_stats[0]}
@@ -157,6 +208,7 @@ if __name__ == "__main__":
                     avg["unit_circle_frac"], avg["contracting_frac"], avg["expanding_frac"],
                     avg["spectral_radius"], avg["min_singular"], avg["condition_number"],
                     avg["mean_eig_phase"], avg["expected_phase"], avg["phase_error"],
+                    avg["j_a_max"], avg["j_a_mean"], avg["j_a_norm"],
                     std["spectral_radius"], std["phase_error"], avg["g_over_l"], is_ood,
                 ])
                 f.flush()
