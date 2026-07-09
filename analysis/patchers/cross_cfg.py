@@ -33,68 +33,43 @@ def _config_pairs(variable, regime):
 
 
 def cross_config_patch(model, direction, meta, cfg, writer, device, rng,
-                       top_ks=(1, 2, 3, 4, 5), n_traj=50, steps=100):
+                       top_ks=(1,2,3,4,5), n_traj=50, steps=100):
     variable = meta["variable"]
     if INTERVENTION[variable]["type"] != "config":
         return
+    is_rssm = isinstance(model, WorldModelRSSM)
 
     for (g_src, l_src), (g_tgt, l_tgt) in _config_pairs(variable, cfg["regime"]):
-        src_s, _ = collect_for_config(g_src, l_src, cfg["env"], cfg["impulse"],
-                                      seed=4200, n_traj=n_traj, steps=steps)
-        tgt_s, _ = collect_for_config(g_tgt, l_tgt, cfg["env"], cfg["impulse"],
-                                      seed=4200, n_traj=n_traj, steps=steps)
+        src_s, _ = collect_for_config(g_src, l_src, cfg["env"], cfg["impulse"], seed=4200, n_traj=n_traj, steps=steps)
+        tgt_s, _ = collect_for_config(g_tgt, l_tgt, cfg["env"], cfg["impulse"], seed=4200, n_traj=n_traj, steps=steps)
         D = src_s.shape[-1]
-        src_flat = src_s.reshape(-1, D).float().to(device)
-        tgt_flat = tgt_s.reshape(-1, D).float().to(device)
+        n = min(src_s.reshape(-1,D).shape[0], tgt_s.reshape(-1,D).shape[0])
+        src_flat = src_s.reshape(-1, D).float().to(device)[:n]
+        tgt_flat = tgt_s.reshape(-1, D).float().to(device)[:n]
 
-        n = min(src_flat.shape[0], tgt_flat.shape[0])
-        src_flat, tgt_flat = src_flat[:n], tgt_flat[:n]
-        if isinstance(model, WorldModelRSSM):
-            z_src = model.encode_computational(src_flat)
-            z_tgt = model.encode_computational(tgt_flat)
-            action = torch.zeros(n, 1, device=device)
+        z_src = model.encode_computational(src_flat)
+        z_tgt = model.encode_computational(tgt_flat)
+        action = torch.zeros(n, 1, device=device)
 
-            for top_k in top_ks:
-                dims = np.argsort(np.abs(direction))[-top_k:]
+        for top_k in top_ks:
+            dims = np.argsort(np.abs(direction))[-top_k:]
 
+            if is_rssm:
                 h_ptc, z_ptc = z_tgt[0].clone(), z_tgt[1].clone()
                 z_ptc[:, dims] = z_src[1][:, dims]
                 z_patched = (h_ptc, z_ptc)
-                s_tgt   = model.decode_computational(model.step_computational(z_tgt, action))
-                s_patch = model.decode_computational(model.step_computational(z_patched, action))
-                s_src   = model.decode_computational(model.step_computational(z_src, action))
-
-                base_dist  = ((s_tgt[:, :2]   - s_src[:, :2]) ** 2).mean().sqrt().item()
-                patch_dist = ((s_patch[:, :2] - s_src[:, :2]) ** 2).mean().sqrt().item()
-                shift = base_dist - patch_dist
-
-                writer.writerow([
-                    meta["checkpoint"], variable,
-                    f"src_g{g_src}_l{l_src}", f"tgt_g{g_tgt}_l{l_tgt}",
-                    cfg["latent"], cfg["k"], top_k,
-                    round(shift, 6), round(base_dist, 6), round(patch_dist, 6),
-                ])
-        else:
-            z_src = model.encode_computational(src_flat)
-            z_tgt = model.encode_computational(tgt_flat)
-            action = torch.zeros(n, 1, device=device)
-
-            for top_k in top_ks:
-                dims = np.argsort(np.abs(direction))[-top_k:]
-
+            else:
                 z_patched = z_tgt.clone()
                 z_patched[:, dims] = z_src[:, dims]
-                s_tgt   = model.decode_computational(model.step_computational(z_tgt, action))
-                s_patch = model.decode_computational(model.step_computational(z_patched, action))
-                s_src   = model.decode_computational(model.step_computational(z_src, action))
 
-                base_dist  = ((s_tgt[:, :2]   - s_src[:, :2]) ** 2).mean().sqrt().item()
-                patch_dist = ((s_patch[:, :2] - s_src[:, :2]) ** 2).mean().sqrt().item()
-                shift = base_dist - patch_dist
+            s_tgt   = model.decode_computational(model.step_computational(z_tgt, action))
+            s_patch = model.decode_computational(model.step_computational(z_patched, action))
+            s_src   = model.decode_computational(model.step_computational(z_src, action))
 
-                writer.writerow([
-                    meta["checkpoint"], variable,
-                    f"src_g{g_src}_l{l_src}", f"tgt_g{g_tgt}_l{l_tgt}",
-                    cfg["latent"], cfg["k"], top_k,
-                    round(shift, 6), round(base_dist, 6), round(patch_dist, 6),
-                ])
+            base_dist  = ((s_tgt[:, :2]   - s_src[:, :2])**2).mean().sqrt().item()
+            patch_dist = ((s_patch[:, :2] - s_src[:, :2])**2).mean().sqrt().item()
+            shift = base_dist - patch_dist
+            writer.writerow([meta["checkpoint"], variable,
+                             f"src_g{g_src}_l{l_src}", f"tgt_g{g_tgt}_l{l_tgt}",
+                             cfg["latent"], cfg["k"], top_k,
+                             round(shift,6), round(base_dist,6), round(patch_dist,6)])

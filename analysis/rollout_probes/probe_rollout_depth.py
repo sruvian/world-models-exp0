@@ -90,7 +90,7 @@ if __name__ == "__main__":
             for g_eval, l_eval in eval_configs:
                 states_t, actions_t = collect_for_config(g_eval, l_eval, cfg["env"], impulse)
                 with torch.inference_mode():
-                    comp_current = model.encode_computational(states_t[:, 0, :]).clone()
+                    comp_current = model.encode_computational(states_t[:, 0, :])
 
                 for depth in PROBE_DEPTHS:
                     if depth > 0:

@@ -37,3 +37,7 @@ regime_probe_*/
 rollout_depth_*/
 temp_models/
 *tar.gz
+rollout_probe_rssm/
+model_saves_dmd_reg/
+act_patch_dmd/
+.vscode/

@@ -81,7 +81,7 @@ if __name__ == "__main__":
                     continue
                 meta = make_metadata(args.readout_type, variable, "computational",
                                      cfg["model_name"], cfg["latent"], cfg["regime"], cfg["seed"])
-                meta["checkpoint"] = Path(mf).name
+                meta["checkpoint"] = str(Path(mf))
                 np.savez(out_sub / f"{args.readout_type}_{variable}_{Path(mf).stem}.npz",
                          direction=direction, **meta)
         print(f"[{env_tag}_{policy_tag}_{model_tag}] {len(model_files)} models")
