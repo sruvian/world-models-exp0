@@ -67,12 +67,13 @@ if __name__ == "__main__":
             continue
 
         checkpoint = meta["checkpoint"]
-        model_file = Path(args.models_dir) / checkpoint
+        model_file = Path(checkpoint)
         if not model_file.exists():
-
-            hits = glob.glob(str(Path(args.models_dir) / "**" / checkpoint), recursive=True)
+            hits = glob.glob(str(Path(args.models_dir) / "**" / Path(checkpoint).name), recursive=True)
             if not hits:
                 print(f"[skip] model not found: {checkpoint}"); continue
+            if len(hits) > 1:
+                print(f"[warn] {len(hits)} matches for {Path(checkpoint).name}, using {hits[0]}")
             model_file = Path(hits[0])
 
         cfg = parse_model(model_file)
