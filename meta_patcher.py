@@ -77,6 +77,8 @@ if __name__ == "__main__":
             model_file = Path(hits[0])
 
         cfg = parse_model(model_file)
+        if cfg["regime"] is None:
+            continue
         if checkpoint not in model_cache:
             model_cache[checkpoint] = load_model(model_file, cfg, args.device)
         model = model_cache[checkpoint]
