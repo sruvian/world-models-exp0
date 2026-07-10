@@ -38,7 +38,7 @@ class ValidationSuite:
             final_err = ((target - final_decode)**2).sum().sqrt()
             target_norm = (target**2).sum().sqrt() + 1e-9
             ceiling_rel = (final_err / target_norm).item()
-            return dz.detach(), final_err.detach(), ceiling_rel.numpy(), z.norm()
+            return dz.detach(), final_err.detach(), ceiling_rel, z.norm()
 
     def direction_transport(self, source_states: torch.Tensor, source_config: dict, target_config:dict, channel: int,
                 probe_direction: np.ndarray, target_value, action: torch.Tensor, target_states: torch.Tensor | None = None):
