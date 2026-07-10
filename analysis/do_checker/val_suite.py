@@ -50,8 +50,8 @@ class ValidationSuite:
                     gt_vec = np.array(delta_ground_truth, dtype=float)
                     model_vec = np.array(delta_model_shifts, dtype=float)
                     gt_norm = np.linalg.norm(gt_vec) + 1e-9
-                    ground_truths.append(gt_norm)                              # oracle magnitude
-                    model_shifts.append(float(model_vec @ gt_vec / gt_norm))   # model shift along oracle direction
+                    ground_truths.append(gt_norm)
+                    model_shifts.append(float(model_vec @ gt_vec / gt_norm))
                 elif channel == 1:
                     ground_truth_theta = np.arctan2(delta_ground_truth[1], delta_ground_truth[0])
                     model_shift_theta = np.arctan2(delta_model_shifts[1], delta_model_shifts[0])
@@ -100,13 +100,13 @@ class ValidationSuite:
         probe_slope = probe_result["slope"]
         return {
 
-            "ceiling_err": float(final_error),                    # how well the BEST patch achieves oracle target
+            "ceiling_err": float(final_error),
 
-            "analytical_search_gap": float((dz_opt - dz).detach().norm()), # ~0 if pseudoinverse matches search
-            "dz_opt_cossim": cos_sim_dyzopt_dz,                   # cos(search δz, analytical δz) -> ~1 if theorem holds
-            "dy_opt_norm": float(dy_opt.detach().norm()),                  # achievable output effect magnitude
+            "analytical_search_gap": float((dz_opt - dz).detach().norm()),
+            "dz_opt_cossim": cos_sim_dyzopt_dz,
+            "dy_opt_norm": float(dy_opt.detach().norm()),
 
-            "dz_probe_cossim": cos_sim_dz,                        # cos(optimal δz, probe direction) -> LOW = dissociation
+            "dz_probe_cossim": cos_sim_dz,
 
             "probe_slope": probe_slope,
             "probe_survival": probe_result["survival"],
@@ -168,10 +168,10 @@ class ValidationSuite:
             patched = self.checker.decode(self.checker.step(z + dz, action))
         return (patched - base)[channel].item()
 
-    def calibrate_target(self, target_states, probe_directions):
-
-        w_t = torch.from_numpy(probe_directions) if isinstance(probe_directions, np.ndarray) else probe_directions
-        with torch.no_grad():
-            z = self.checker.encode(target_states)
-            return float((z @ w_t).mean())
+def calibrate_target(self, target_states, probe_directions):
+    w_t = torch.from_numpy(probe_directions) if isinstance(probe_directions, np.ndarray) else probe_directions
+    with torch.no_grad():
+        enc = self.checker.encode(target_states)
+        _, z = self.checker._split(enc)
+        return float((z @ w_t).mean())
         
