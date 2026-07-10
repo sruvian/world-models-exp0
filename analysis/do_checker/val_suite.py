@@ -168,10 +168,9 @@ class ValidationSuite:
             patched = self.checker.decode(self.checker.step(z + dz, action))
         return (patched - base)[channel].item()
 
-def calibrate_target(self, target_states, probe_directions):
-    w_t = torch.from_numpy(probe_directions) if isinstance(probe_directions, np.ndarray) else probe_directions
-    with torch.no_grad():
-        enc = self.checker.encode(target_states)
-        _, z = self.checker._split(enc)
-        return float((z @ w_t).mean())
-        
+    def calibrate_target(self, target_states, probe_directions):
+        w_t = torch.from_numpy(probe_directions) if isinstance(probe_directions, np.ndarray) else probe_directions
+        with torch.no_grad():
+            enc = self.checker.encode(target_states)
+            _, z = self.checker._split(enc)
+            return float((z @ w_t).mean())
