@@ -34,7 +34,7 @@ class ValidationSuite:
             loss.backward()
             optimiser.step()
         with torch.no_grad():
-            final_decode = self.checker.decode(self.checker._join(h, z + dz), action)
+            final_decode = self.checker.decode(self.checker.step(self.checker._join(h, z + dz), action))
             final_err = ((target - final_decode)**2).sum().sqrt()
             return dz.detach(), final_err.detach(), final_decode.detach().numpy(), z.norm()
 
