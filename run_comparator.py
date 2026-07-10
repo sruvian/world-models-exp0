@@ -47,11 +47,13 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--readouts_dir", required=True)
     ap.add_argument("--models_dir", required=True)
+    ap.add_argument("--save_dir", required = True)
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--manifold_mult", type=float, default=2.0)
     args = ap.parse_args()
 
     csv_handles = {}
+    model_cache = {}
     for rf in glob.glob(str(Path(args.readouts_dir) / "**" / "*.npz"), recursive=True):
         d = np.load(rf, allow_pickle=True)
         direction = d["direction"]
@@ -62,13 +64,17 @@ if __name__ == "__main__":
         if variable not in checkable_vars(meta["regime"], is_cartpole=("cartpole" in meta.get("checkpoint","").lower())):
             continue
 
-        hits = glob.glob(str(Path(args.models_dir) / "**" / meta["checkpoint"]), recursive=True)
-        if not hits:
+        model_file = Path(meta["checkpoint"])
+        if not model_file.exists():
             print(f"[skip] model not found: {meta['checkpoint']}"); continue
-        mf = hits[0]
+        mf = str(model_file)
+        
         cfg = parse_model(Path(mf))
         is_cp = cfg["env"] == "CartPoleSim"
         model = load_model(mf, cfg, args.device)
+        if mf not in model_cache:
+            model_cache[mf] = load_model(mf, cfg, args.device)
+        model = model_cache[mf]
 
         checker = DoChecker(
             encode=model.encode_computational,
@@ -105,7 +111,7 @@ if __name__ == "__main__":
         policy_tag = "sparse" if cfg["impulse"] else "noise"
         group = f"{env_tag}_{policy_tag}_{TAGS[cfg['model_name']]}"
         if group not in csv_handles:
-            path = Path(f"comparator_results/comparator_{group}.csv")
+            path = Path(f"{args.save_dir}/comparator_{group}.csv")
             path.parent.mkdir(parents=True, exist_ok=True)
             hdr = not path.exists()
             fh = open(path, "a", newline="")

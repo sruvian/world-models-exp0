@@ -21,14 +21,14 @@ class ValidationSuite:
             target = torch.from_numpy(target)
         action = action.reshape(-1, 1) 
         with torch.no_grad():
-            z = self.checker.encode(states).detach()
-        
-        dz = torch.zeros_like(z, requires_grad= True)
-        optimiser = torch.optim.Adam([dz], lr = self.lr)
+            enc = self.checker.encode(states)
+            h, z = self.checker._split(enc)
+            z = z.detach()
+        dz = torch.zeros_like(z, requires_grad=True)
+        optimiser = torch.optim.Adam([dz], lr=self.lr)
         for _ in range(200):
-            
             optimiser.zero_grad()
-            pred = self.checker.decode(self.checker.step((z + dz), action))
+            pred = self.checker.decode(self.checker.step(self.checker._join(h, z + dz), action))
             channel_scale = target.std(dim=0) + 1e-6
             loss = (((target - pred) / channel_scale)**2).sum() + self.lam_reg * (dz**2).sum()
             loss.backward()

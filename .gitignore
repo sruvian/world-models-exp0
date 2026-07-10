@@ -39,5 +39,5 @@ temp_models/
 *tar.gz
 rollout_probe_rssm/
 model_saves_dmd_reg/
-act_patch_dmd/
+act_patch_*/
 .vscode/

@@ -32,17 +32,18 @@ class DoChecker():
 
         return [source_next, target_next]
 
-    def intervene(self, source_state: torch.Tensor, target_value, probe_direction: np.ndarray, action: torch.Tensor, patch: bool = True) -> dict:
+    def intervene(self, source_state, target_value, probe_direction, action, patch=True):
         with torch.no_grad():
             enc = self.encode(source_state)
+            h, z = self._split(enc)
             if patch:
-                probe_direction_tensor = torch.from_numpy(probe_direction)
-                encoder_shift: torch.Tensor = ((target_value - (enc @ probe_direction_tensor)) * probe_direction_tensor) / (probe_direction_tensor @ probe_direction_tensor)  
-            else: 
-                encoder_shift = torch.Tensor([0.0])
-            encoder_patched = enc + encoder_shift
-            on_manifold_dict = self._on_manifold(encoder_shift, enc)
-            transition = self.step(encoder_patched, action)
+                w = torch.from_numpy(probe_direction)
+                encoder_shift = ((target_value - (z @ w)) * w) / (w @ w)
+            else:
+                encoder_shift = torch.zeros_like(z)
+            z_patched = z + encoder_shift
+            on_manifold_dict = self._on_manifold(encoder_shift, z)
+            transition = self.step(self._join(h, z_patched), action)
             dec = self.decode(transition)
         return {"decoder": dec, **on_manifold_dict}
 
@@ -75,10 +76,12 @@ class DoChecker():
     def optimal_intervention(self, source_states, oracle_targets, action):
         dz_opts, dy_opts = [], []
         for i in range(len(source_states)):
-            z = self.encode(source_states[i:i+1]).detach().requires_grad_(True)
+            enc = self.encode(source_states[i:i+1])
+            h, z = self._split(enc)
+            z = z.detach().requires_grad_(True)
             a = action[i:i+1]
             def f(zz):
-                return self.decode(self.step(zz, a))
+                return self.decode(self.step(self._join(h, zz), a))
             y = f(z)
             J = torch.autograd.functional.jacobian(f, z).reshape(y.shape[-1], z.shape[-1])
             residual = torch.as_tensor(oracle_targets[i], dtype=torch.float32) - y.squeeze(0)
@@ -86,3 +89,11 @@ class DoChecker():
             dz_opts.append(dz_opt)
             dy_opts.append(J @ dz_opt)
         return torch.stack(dz_opts), torch.stack(dy_opts)
+    
+    def _split(self, enc):
+        if isinstance(enc, tuple):
+            return enc[0], enc[1]
+        return None, enc
+
+    def _join(self, h, z):
+        return (h, z) if h is not None else z
