@@ -41,3 +41,4 @@ rollout_probe_rssm/
 model_saves_dmd_reg/
 act_patch_*/
 .vscode/
+comparator_*/
