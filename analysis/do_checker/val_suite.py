@@ -32,10 +32,9 @@ class ValidationSuite:
             channel_scale = target.std(dim=0) + 1e-6
             loss = (((target - pred) / channel_scale)**2).sum() + self.lam_reg * (dz**2).sum()
             loss.backward()
-            
             optimiser.step()
         with torch.no_grad():
-            final_decode = self.checker.decode(self.checker.step((z + dz), action))
+            final_decode = self.checker.decode(self.checker._join(h, z + dz), action)
             final_err = ((target - final_decode)**2).sum().sqrt()
             return dz.detach(), final_err.detach(), final_decode.detach().numpy(), z.norm()
 
