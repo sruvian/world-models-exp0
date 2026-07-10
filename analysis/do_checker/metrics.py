@@ -3,15 +3,27 @@ import numpy as np
 import torch
 
 
-def transport_metrics(gtruths: np.ndarray, mshifts: np.ndarray, n_total: int) -> dict:
+def transport_metrics(gtruths, mshifts, n_total):
     n_used = len(gtruths)
     survival = n_used / n_total if n_total else 0.0
+    finite = np.isfinite(gtruths) & np.isfinite(mshifts)
+    gtruths, mshifts = gtruths[finite], mshifts[finite]
+    n_used = len(gtruths)
+
     if n_used < 2:
         return {"fraction": np.nan, "slope": np.nan, "r2": np.nan,
                 "n_used": n_used, "n_total": n_total, "survival": survival,
                 "gtruths": gtruths, "mshifts": mshifts}
-
-    slope, intercept = np.polyfit(gtruths, mshifts, 1)
+    if np.ptp(gtruths) < 1e-9 or np.ptp(mshifts) < 1e-9:
+        return {"fraction": np.nan, "slope": np.nan, "r2": np.nan,
+                "n_used": n_used, "n_total": n_total, "survival": survival,
+                "gtruths": gtruths, "mshifts": mshifts}
+    try:
+        slope, intercept = np.polyfit(gtruths, mshifts, 1)
+    except np.linalg.LinAlgError:
+        return {"fraction": np.nan, "slope": np.nan, "r2": np.nan,
+                "n_used": n_used, "n_total": n_total, "survival": survival,
+                "gtruths": gtruths, "mshifts": mshifts}
     pred = slope * gtruths + intercept
     ss_res = np.sum((mshifts - pred) ** 2)
     ss_tot = np.sum((mshifts - mshifts.mean()) ** 2)
