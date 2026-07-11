@@ -79,9 +79,10 @@ if __name__ == "__main__":
         cfg = parse_model(model_file)
         if cfg["regime"] is None:
             continue
-        if checkpoint not in model_cache:
-            model_cache[checkpoint] = load_model(model_file, cfg, args.device)
-        model = model_cache[checkpoint]
+        model_key = str(model_file)
+        if model_key not in model_cache:
+            model_cache[model_key] = load_model(model_file, cfg, args.device)
+        model = model_cache[model_key]
 
         env_tag = "cartpole" if cfg["env"]=="CartPoleSim" else "pendulum"
         policy_tag = "sparse" if cfg["impulse"] else "noise"
@@ -94,9 +95,14 @@ if __name__ == "__main__":
             fh = open(path, "a", newline="")
             w = csv.writer(fh)
             if hdr:
-                w.writerow(["checkpoint","target_var","eval_config","latent_dim","k",
-                            "top_k","is_ood","patch_mode","shift","shift_source",
-                            "baseline_err","patched_err","baseline_err_source","patched_err_source"])
+                if args.method == "cross_config":
+                    w.writerow(["checkpoint","target_var","src_config","tgt_config",
+                                "latent_dim","k","top_k","patch_mode",
+                                "shift","base_dist","patch_dist"])
+                else:
+                    w.writerow(["checkpoint","target_var","eval_config","latent_dim","k",
+                                "top_k","is_ood","patch_mode","shift","shift_source",
+                                "baseline_err","patched_err","baseline_err_source","patched_err_source"])
             csv_handles[group] = (fh, w)
         fh, writer = csv_handles[group]
 

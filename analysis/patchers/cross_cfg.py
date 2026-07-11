@@ -32,12 +32,45 @@ def _config_pairs(variable, regime):
     return pairs
 
 
+N_RAND_DIM_DRAWS = 10
+
+def _apply_patch(z_tgt, z_src, dims, mode, latent_dim, rng, is_rssm):
+    if is_rssm:
+        h_ptc, z_ptc = z_tgt[0].clone(), z_tgt[1].clone()
+        src_z = z_src[1]
+        if mode == "real":
+            z_ptc[:, dims] = src_z[:, dims]
+        elif mode == "rand_values":
+            rv = torch.from_numpy(
+                rng.standard_normal((z_ptc.shape[0], len(dims))).astype(np.float32)
+            ).to(z_ptc.device) * src_z.std()
+            z_ptc[:, dims] = rv
+        elif mode == "rand_dims":
+            rand_dims = rng.choice(latent_dim, size=len(dims), replace=False)
+            z_ptc[:, rand_dims] = src_z[:, rand_dims]
+        return (h_ptc, z_ptc)
+    else:
+        z_ptc = z_tgt.clone()
+        if mode == "real":
+            z_ptc[:, dims] = z_src[:, dims]
+        elif mode == "rand_values":
+            rv = torch.from_numpy(
+                rng.standard_normal((z_ptc.shape[0], len(dims))).astype(np.float32)
+            ).to(z_ptc.device) * z_src.std()
+            z_ptc[:, dims] = rv
+        elif mode == "rand_dims":
+            rand_dims = rng.choice(latent_dim, size=len(dims), replace=False)
+            z_ptc[:, rand_dims] = z_src[:, rand_dims]
+        return z_ptc
+
+
 def cross_config_patch(model, direction, meta, cfg, writer, device, rng,
                        top_ks=(1,2,3,4,5), n_traj=50, steps=100):
     variable = meta["variable"]
     if INTERVENTION[variable]["type"] != "config":
         return
     is_rssm = isinstance(model, WorldModelRSSM)
+    latent_dim = z_src_dim = None
 
     for (g_src, l_src), (g_tgt, l_tgt) in _config_pairs(variable, cfg["regime"]):
         src_s, _ = collect_for_config(g_src, l_src, cfg["env"], cfg["impulse"], seed=4200, n_traj=n_traj, steps=steps)
@@ -51,25 +84,26 @@ def cross_config_patch(model, direction, meta, cfg, writer, device, rng,
         z_tgt = model.encode_computational(tgt_flat)
         action = torch.zeros(n, 1, device=device)
 
+        latent_dim = (z_src[1].shape[1] if is_rssm else z_src.shape[1])
+
+        s_tgt = model.decode_computational(model.step_computational(z_tgt, action))
+        s_src = model.decode_computational(model.step_computational(z_src, action))
+        base_dist = ((s_tgt[:, :2] - s_src[:, :2])**2).mean().sqrt().item()
+
         for top_k in top_ks:
             dims = np.argsort(np.abs(direction))[-top_k:]
-
-            if is_rssm:
-                h_ptc, z_ptc = z_tgt[0].clone(), z_tgt[1].clone()
-                z_ptc[:, dims] = z_src[1][:, dims]
-                z_patched = (h_ptc, z_ptc)
-            else:
-                z_patched = z_tgt.clone()
-                z_patched[:, dims] = z_src[:, dims]
-
-            s_tgt   = model.decode_computational(model.step_computational(z_tgt, action))
-            s_patch = model.decode_computational(model.step_computational(z_patched, action))
-            s_src   = model.decode_computational(model.step_computational(z_src, action))
-
-            base_dist  = ((s_tgt[:, :2]   - s_src[:, :2])**2).mean().sqrt().item()
-            patch_dist = ((s_patch[:, :2] - s_src[:, :2])**2).mean().sqrt().item()
-            shift = base_dist - patch_dist
-            writer.writerow([meta["checkpoint"], variable,
-                             f"src_g{g_src}_l{l_src}", f"tgt_g{g_tgt}_l{l_tgt}",
-                             cfg["latent"], cfg["k"], top_k,
-                             round(shift,6), round(base_dist,6), round(patch_dist,6)])
+            for mode in ["real", "rand_values", "rand_dims"]:
+                n_draws = N_RAND_DIM_DRAWS if mode == "rand_dims" else 1
+                patch_dists = []
+                for _ in range(n_draws):
+                    z_patched = _apply_patch(z_tgt, z_src, dims, mode, latent_dim, rng, is_rssm)
+                    s_patch = model.decode_computational(model.step_computational(z_patched, action))
+                    patch_dists.append(((s_patch[:, :2] - s_src[:, :2])**2).mean().sqrt().item())
+                patch_dist = float(np.mean(patch_dists))
+                shift = base_dist - patch_dist
+                writer.writerow([
+                    meta["checkpoint"], variable,
+                    f"src_g{g_src}_l{l_src}", f"tgt_g{g_tgt}_l{l_tgt}",
+                    cfg["latent"], cfg["k"], top_k, mode,
+                    round(shift,6), round(base_dist,6), round(patch_dist,6),
+                ])
