@@ -24,7 +24,7 @@ def layer_mi(activation, target, n_seeds=5, n_sub=3000):
 
 
 def multilayer_probe(acts, timesteps, current_target, next_target, config_labels,
-                     n_seeds=5, alpha=10.0, n_sub=50000):
+                     n_seeds=5, alpha=10.0, n_sub=15000):
     results = {}
     rng0 = np.random.default_rng(0)
     for layer_name, activation in tqdm(acts.items(), desc="layers", leave=False):
@@ -42,12 +42,12 @@ def multilayer_probe(acts, timesteps, current_target, next_target, config_labels
             r2s.append(Ridge(alpha=alpha).fit(Xtr, ytr).score(Xte, yte))
             y_shuf = np.random.default_rng(seed).permutation(ytr)
             base_r2s.append(Ridge(alpha=alpha).fit(Xtr, y_shuf).score(Xte, yte))
-        mi_m, mi_s, mi_sh_m, mi_sh_s = layer_mi(X, y, n_seeds=5)   # X already subsampled
+        # mi_m, mi_s, mi_sh_m, mi_sh_s = layer_mi(X, y, n_seeds=5)   # X already subsampled
         results[layer_name] = {
             "r2_mean": float(np.mean(r2s)), "r2_std": float(np.std(r2s)),
             "baseline_mean": float(np.mean(base_r2s)),
             "above_baseline": float(np.mean(r2s) - np.mean(base_r2s)),
-            "mi_mean": mi_m, "mi_std": mi_s, "mi_shuf_mean": mi_sh_m, "mi_shuf_std": mi_sh_s,
+            # "mi_mean": mi_m, "mi_std": mi_s, "mi_shuf_mean": mi_sh_m, "mi_shuf_std": mi_sh_s,
         }
     return results
 
@@ -70,7 +70,7 @@ if __name__ == "__main__":
             writer.writerow([
                 "checkpoint", "model_config", "variable", "layer", "latent_dim", "k",
                 "r2_mean", "r2_std", "baseline_mean", "above_baseline",
-                "mi_mean", "mi_std", "mi_shuf_mean", "mi_shuf_std",
+                # "mi_mean", "mi_std", "mi_shuf_mean", "mi_shuf_std",
             ])
 
         for mf in files:
@@ -92,8 +92,8 @@ if __name__ == "__main__":
                         cfg["latent"], cfg["k"],
                         round(m["r2_mean"], 4), round(m["r2_std"], 4),
                         round(m["baseline_mean"], 4), round(m["above_baseline"], 4),
-                        round(m["mi_mean"], 4), round(m["mi_std"], 4),
-                        round(m["mi_shuf_mean"], 4), round(m["mi_shuf_std"], 4),
+                        # round(m["mi_mean"], 4), round(m["mi_std"], 4),
+                        # round(m["mi_shuf_mean"], 4), round(m["mi_shuf_std"], 4),
                     ])
                     csv_file.flush()
         csv_file.close()

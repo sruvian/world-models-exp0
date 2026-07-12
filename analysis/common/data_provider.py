@@ -18,12 +18,12 @@ def gl_from_filename(path):
     return float(g_match.group(1)), float(l_match.group(1))
 
 
-def _make_env_for_config(env_name, g, l, seed):
+def _make_env_for_config(env_name, g, l, seed, max_action):
     if env_name == "CartPoleSim":
         return make_env("CartPoleSim", gravity=g, mass1=0.1, mass2=1.0,
-                        length=l, dt=0.01, max_action=10.0, damping=0.0, seed=seed)
+                        length=l, dt=0.01, max_action=max_action, damping=0.0, seed=seed)
     return make_env("PendulumSim", gravity=g, mass1=1.0, mass2=0.0,
-                    length=l, dt=0.01, max_action=10.0, damping=0.0, seed=seed)
+                    length=l, dt=0.01, max_action=max_action, damping=0.0, seed=seed)
 
 
 def load_from_files(regime, env, impulse_policy):
@@ -63,8 +63,8 @@ def get_data(cfg):
     else:
         return generate_fresh(env, cfg["g"], cfg["l"], impulse)
     
-def _collect(g, l, env, impulse=False, seed=100, n_traj=None, steps=None, policy_seed=None):
-    env_obj = _make_env_for_config(env, g, l, seed=seed)
+def _collect(g, l, env, impulse=False, seed=100, n_traj=None, steps=None, policy_seed=None, max_action= 10.0):
+    env_obj = _make_env_for_config(env, g, l, seed=seed, max_action= max_action)
     s, a, _ = collect_trajectories(
         env_obj,
         n_traj or COLLECTOR["num_trajectories"],
@@ -80,6 +80,6 @@ def generate_fresh(env, g, l, impulse_policy):
     return [s.numpy()], [float(g)], [float(l)]
 
 def collect_for_config(g, l, env, impulse=False, seed=100,
-                       n_traj=None, steps=None, policy_seed=None):
+                       n_traj=None, steps=None, policy_seed=None, max_action = 10.0):
     return _collect(g, l, env, impulse=impulse, seed=seed,
-                    n_traj=n_traj, steps=steps, policy_seed=policy_seed)
+                    n_traj=n_traj, steps=steps, policy_seed=policy_seed, max_action= max_action)

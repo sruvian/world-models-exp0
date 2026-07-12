@@ -43,3 +43,6 @@ act_patch_*/
 .vscode/
 comparator_*/
 model_saves_*/
+cross_cfg_*
+multilayer_probe_*/
+behavioural_*/
