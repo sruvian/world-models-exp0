@@ -119,14 +119,14 @@ if __name__ == "__main__":
             if hdr:
                 w.writerow(["checkpoint","variable","latent_dim","k","regime",
                             "ceiling_err","dz_opt_cossim","analytical_search_gap","dy_opt_norm",
-                            "dz_probe_cossim","survival","probe_slope","clears_null","null_95",
+                            "dz_probe_cossim","dzopt_probe_cossim","survival","probe_slope","clears_null","null_95",
                             "pc1_var","pc1_probe_cos"])
             csv_handles[group] = (fh, w)
         fh, w = csv_handles[group]
         w.writerow([
             meta["checkpoint"], variable, cfg["latent"], cfg["k"], cfg["regime"],
             result["ceiling_err"], result["dz_opt_cossim"], result.get("analytical_search_gap"),
-            result["dy_opt_norm"], result["dz_probe_cossim"], result['probe_survival'], result["probe_slope"],
+            result["dy_opt_norm"], result["dz_probe_cossim"], result['dzopt_probe_cossim'], result['probe_survival'], result["probe_slope"],
             result["clears_null"], result["null_95"],
             result.get("pc1_var"), result.get("pc1_probe_cos"),
         ])

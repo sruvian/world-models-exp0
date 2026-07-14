@@ -62,7 +62,7 @@ def run_probe(train_z: np.ndarray, val_z: np.ndarray,
 
 
 def stratified_probe_split(model, all_states, gravities, lengths,
-                           is_cartpole, train_frac=0.8, regime="combined"):
+                           is_cartpole, train_frac=0.8, regime="combined", representation="latent"):
     train_s, val_s, train_g, val_g, train_l, val_l = [], [], [], [], [], []
 
     for states_c, g_c, l_c in zip(all_states, gravities, lengths):
@@ -84,12 +84,17 @@ def stratified_probe_split(model, all_states, gravities, lengths,
     val_gt   = torch.from_numpy(np.concatenate(val_g, 0)).float()
     train_lt = torch.from_numpy(np.concatenate(train_l, 0)).float()
     val_lt   = torch.from_numpy(np.concatenate(val_l, 0)).float()
-
-    train_z = generate_latents(model, train_states)
-    val_z   = generate_latents(model, val_states)
-    latent_dim = train_z.shape[-1]
-    train_z_flat = train_z.reshape(-1, latent_dim).numpy()
-    val_z_flat   = val_z.reshape(-1, latent_dim).numpy()
+    if representation == "latent":
+        train_z = generate_latents(model, train_states)
+        val_z   = generate_latents(model, val_states)
+        latent_dim = train_z.shape[-1]
+        train_z_flat = train_z.reshape(-1, latent_dim).numpy()
+        val_z_flat   = val_z.reshape(-1, latent_dim).numpy()
+    
+    elif representation == "state":
+        latent_dim = train_states.shape[-1]
+        train_z_flat = train_states.reshape(-1, latent_dim).numpy()
+        val_z_flat = val_states.reshape(-1, latent_dim).numpy()
 
     def build_targets(states, g_t, l_t, regime):
         vars_here = probeable_vars(regime, is_cartpole)
@@ -115,6 +120,7 @@ if __name__ == "__main__":
     ap.add_argument("--random_init", action="store_true")
     ap.add_argument("--out_dir", required = True)
     ap.add_argument("--device", default="cpu")
+    ap.add_argument("--state_type", default='latent')
     args = ap.parse_args()
 
     for (env_tag, policy_tag, model_tag), files in iter_model_groups(args.models_dir).items():
@@ -146,14 +152,14 @@ if __name__ == "__main__":
                     "latent": cfg["latent"], "k": cfg["k"], "policy": tag}
 
             train_z, val_z, train_t, val_t = stratified_probe_split(
-                model, states, gravities, lengths, is_cp, regime=cfg["regime"])
+                model, states, gravities, lengths, is_cp, regime=cfg["regime"], representation=args.state_type)
             print("=== Trained ===")
             for tn in train_t:
                 run_probe(train_z, val_z, train_t[tn], val_t[tn], tn, writer, meta, args.alpha)
 
             if random_model is not None:
                 rz_tr, rz_val, rt_tr, rt_val = stratified_probe_split(
-                    random_model, states, gravities, lengths, is_cp, regime=cfg["regime"])
+                    random_model, states, gravities, lengths, is_cp, regime=cfg["regime"], representation= args.state_type)
                 print("=== Random baseline ===")
                 for tn in rt_tr:
                     run_probe(rz_tr, rz_val, rt_tr[tn], rt_val[tn], f"{tn}_random", writer, meta, args.alpha)

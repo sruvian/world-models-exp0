@@ -84,6 +84,7 @@ class ValidationSuite:
         dz_opt, dy_opt = self.checker.optimal_intervention(source_states, oracle_targets, action)
         cos_sim_dyzopt_dz = direction_alignment(dz, dz_opt)
         cos_sim_dz = direction_alignment(dz, probe_direction)
+        cos_sim_dyzopt_probe = direction_alignment(dz_opt, probe_direction)
         
         
         target_value = self.calibrate_target(calibration_pool, probe_direction)
@@ -109,7 +110,7 @@ class ValidationSuite:
             "dy_opt_norm": float(dy_opt.detach().norm()),
 
             "dz_probe_cossim": cos_sim_dz,
-
+            "dzopt_probe_cossim": cos_sim_dyzopt_probe,
             "probe_slope": probe_slope,
             "probe_survival": probe_result["survival"],
             **null,
