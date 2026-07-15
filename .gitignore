@@ -46,3 +46,4 @@ model_saves_*/
 cross_cfg_*
 multilayer_probe_*/
 behavioural_*/
+mlp_*/

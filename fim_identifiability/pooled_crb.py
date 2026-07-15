@@ -96,7 +96,7 @@ def pooled_crb(pattern, h=1e-2, verbose=True):
             n_broken += 1
         if verbose:
             tag = "" if ok else " BROKEN FIM (non-PD), skipped"
-            condstr = f"{cond:.2e}" if ok else "  n/a"
+            condstr = f"{cond:.2f}" if ok else "  n/a"
             print(f"  g={g:6.3f} l={l:6.3f}  N={N}  cond={condstr}{tag}")
 
     cg_pool, cl_pool, cond_pool, ok_pool = _safe_crb_cond(F_pool)
@@ -104,8 +104,8 @@ def pooled_crb(pattern, h=1e-2, verbose=True):
     cg_pt, cl_pt = np.nanmean(pf[:, 0]), np.nanmean(pf[:, 1])
 
     print(f"\n[{len(files)} files, {n_broken} broken]  pattern: {os.path.basename(pattern)}")
-    print(f"  POOLED        CRB_g={cg_pool:.3e}  CRB_l={cl_pool:.3e}  cond={cond_pool:.2e}")
-    print(f"  PER-TRAJ mean CRB_g={cg_pt:.3e}  CRB_l={cl_pt:.3e}")
+    print(f"  POOLED        CRB_g={cg_pool:.3f}  CRB_l={cl_pool:.3f}  cond={cond_pool:.2f}")
+    print(f"  PER-TRAJ mean CRB_g={cg_pt:.3f}  CRB_l={cl_pt:.3f}")
     return {"pooled": (cg_pool, cl_pool, cond_pool),
             "per_traj": (cg_pt, cl_pt), "n": len(files), "n_broken": n_broken}
 
