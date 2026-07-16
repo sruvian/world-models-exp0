@@ -30,7 +30,7 @@ class ValidationSuite:
             optimiser.zero_grad()
             pred = self.checker.decode(self.checker.step(self.checker._join(h, z + dz), action))
             channel_scale = target.std(dim=0) + 1e-6
-            loss = (((target - pred) / channel_scale)**2).sum() + self.lam_reg * (dz**2).sum()
+            loss = (1*(((target - pred) / channel_scale)**2).sum() + self.lam_reg * (dz**2).sum())
             loss.backward()
             optimiser.step()
         with torch.no_grad():
@@ -98,7 +98,6 @@ class ValidationSuite:
             rand_tv = self.calibrate_target(calibration_pool, rand)
             null_dicts.append(self.direction_transport(source_states, source_config, target_config, channel,
                                                        rand, rand_tv, action, target_states))
-
         null = null_summary(null_dicts)
         probe_slope = probe_result["slope"]
         return {

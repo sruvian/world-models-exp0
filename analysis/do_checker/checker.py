@@ -75,6 +75,8 @@ class DoChecker():
 
     def optimal_intervention(self, source_states, oracle_targets, action):
         dz_opts, dy_opts = [], []
+        W = 1.0 / (torch.as_tensor(oracle_targets, dtype=torch.float32).std(dim=0) + 1e-6)
+
         for i in range(len(source_states)):
             enc = self.encode(source_states[i:i+1])
             h, z = self._split(enc)
@@ -84,8 +86,14 @@ class DoChecker():
                 return self.decode(self.step(self._join(h, zz), a))
             y = f(z)
             J = torch.autograd.functional.jacobian(f, z).reshape(y.shape[-1], z.shape[-1])
+            J_W = J *W[:, None]
             residual = torch.as_tensor(oracle_targets[i], dtype=torch.float32) - y.squeeze(0)
-            dz_opt = torch.linalg.pinv(J) @ residual
+            r_W = residual*W
+            # dz_opt = torch.linalg.pinv(J) @ residual
+            try:
+                dz_opt = torch.linalg.pinv(J_W) @ r_W
+            except RuntimeError:
+                dz_opt = torch.full_like(z.squeeze(0), float("nan"))
             dz_opts.append(dz_opt)
             dy_opts.append(J @ dz_opt)
         return torch.stack(dz_opts), torch.stack(dy_opts)
