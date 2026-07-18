@@ -91,11 +91,13 @@ class ValidationSuite:
         probe_result = self.direction_transport(source_states, source_config, target_config, channel,
                                                 probe_direction, target_value, action, target_states)
         null_dicts = []
+        rand_tvs = []
         for seed in range(n_null):
             rng = np.random.default_rng(seed)
             rand = rng.standard_normal(probe_direction.shape).astype(np.float32)
             rand = rand / np.linalg.norm(rand) * np.linalg.norm(probe_direction)
             rand_tv = self.calibrate_target(calibration_pool, rand)
+            rand_tvs.append(float(rand_tv))
             null_dicts.append(self.direction_transport(source_states, source_config, target_config, channel,
                                                        rand, rand_tv, action, target_states))
         null = null_summary(null_dicts)
@@ -114,7 +116,8 @@ class ValidationSuite:
             "probe_survival": probe_result["survival"],
             **null,
             "clears_null": bool(probe_slope > null["null_95"]),
-
+            "probe_target_value": float(target_value),
+            "null_target_mean": float(np.nanmean(rand_tvs)),
             **pca_operator(dz, probe_direction),
             "probe_result": probe_result,
             "null_dicts": null_dicts,

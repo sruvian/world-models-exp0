@@ -49,7 +49,8 @@ def null_summary(null_dicts):
     return {"null_mean": float(np.nanmean(slopes)),
             "null_95": float(np.nanpercentile(slopes, 95)),
             "null_max": float(np.nanmax(slopes)),
-            "null_slopes": slopes}
+            "null_slopes": slopes,
+            "null_nonnan": int(np.sum(~np.isnan(slopes))),}
 
 
 def pca_operator(dz: torch.Tensor, probe_direction: np.ndarray)->dict:

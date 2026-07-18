@@ -47,3 +47,6 @@ cross_cfg_*
 multilayer_probe_*/
 behavioural_*/
 mlp_*/
+log*/
+induced*/
+sanity*/
