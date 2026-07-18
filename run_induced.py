@@ -90,6 +90,7 @@ if __name__ == "__main__":
 
         states, actions = collect_for_config(args.eval_g, args.eval_l, cfg["env"],
                                               cfg["impulse"], seed=4200, n_traj=5, steps=200, max_action=args.action)
+        states = states[:, :-1]
         states = states.reshape(-1, states.shape[-1])
         actions = actions.reshape(-1)
         states = states.numpy() if torch.is_tensor(states) else np.asarray(states)
@@ -147,8 +148,11 @@ if __name__ == "__main__":
                 continue
 
             cosines.append(cos(w_probe, dz_psi))
+        cosines = np.asarray(cosines, dtype=np.float64)
+
         if len(cosines) == 0:
             continue
+
         abs_cos = np.abs(cosines)
 
         policy_tag = "sparse" if cfg["impulse"] else "noise"
