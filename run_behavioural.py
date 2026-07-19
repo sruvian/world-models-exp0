@@ -83,7 +83,7 @@ if __name__ == "__main__":
     ap.add_argument("--models_dir", required=True)
     ap.add_argument("--save_dir", required=True)
     ap.add_argument("--device", default="cpu")
-    ap.add_argument("--action", default=0.0)
+    ap.add_argument("--action", type = float, default=10.0)
     ap.add_argument("--dt", type=float, default=0.01)
     ap.add_argument("--n_traj", type=int, default=10)
     ap.add_argument("--steps", type=int, default=500)
