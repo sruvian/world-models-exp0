@@ -83,6 +83,7 @@ if __name__ == "__main__":
     ap.add_argument("--models_dir", required=True)
     ap.add_argument("--save_dir", required=True)
     ap.add_argument("--device", default="cpu")
+    ap.add_argument("--action", default=0.0)
     ap.add_argument("--dt", type=float, default=0.01)
     ap.add_argument("--n_traj", type=int, default=10)
     ap.add_argument("--steps", type=int, default=500)
@@ -129,7 +130,7 @@ if __name__ == "__main__":
             for (g_eval, l_eval) in SWEEP_CONFIGS:
                 states, actions = collect_for_config(
                     g_eval, l_eval, cfg["env"], cfg["impulse"],
-                    seed=4200, n_traj=args.n_traj, steps=args.steps)
+                    seed=4200, n_traj=args.n_traj, steps=args.steps, max_action=args.action)
                 states = states.float() if torch.is_tensor(states) else torch.from_numpy(states).float()
                 actions = actions.float() if torch.is_tensor(actions) else torch.from_numpy(actions).float()
 
