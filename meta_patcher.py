@@ -1,13 +1,13 @@
-# meta_patcher.py
 import argparse, glob, csv
 from pathlib import Path
 import numpy as np
 import torch
-from analysis.common.utils import parse_model, load_model
+from analysis.common.utils import parse_model, load_model, rollout_state
 from analysis.common.data_provider import collect_for_config
 from analysis.patchers.activation_patching import patch_trajectories
 from analysis.common.utils import TAGS
 from analysis.patchers import cross_config_patch 
+from models import WorldModelRSSM
 
 ALL_CONFIGS = [(5.0,2.0),(5.0,10.0),(5.0,18.0),(9.8,2.0),(9.8,10.0),
                (9.8,18.0),(15.0,2.0),(15.0,10.0),(15.0,18.0)]
@@ -15,21 +15,38 @@ ALL_CONFIGS = [(5.0,2.0),(5.0,10.0),(5.0,18.0),(9.8,2.0),(9.8,10.0),
 def dims_from_direction(direction, top_k):
     return np.argsort(np.abs(direction))[-top_k:]
 
-def run_activation_patch(model, direction, meta, cfg, writer, device, rng):
+def run_activation_patch(model, direction, meta, cfg, writer, device, rng,
+                         representation="computational", t_roll=None):
+    is_rssm = isinstance(model, WorldModelRSSM)
+    space = "h" if representation == "rollout_h" else "z"
+    if space == "h" and not is_rssm:
+        return
+
     eval_configs = ALL_CONFIGS if cfg["flag"] else [(cfg["g"], cfg["l"])]
     for g_eval, l_eval in eval_configs:
         is_ood = (g_eval, l_eval) not in ALL_CONFIGS
         src_s, _ = collect_for_config(g_eval, l_eval, cfg["env"], cfg["impulse"], seed=4200)
         tgt_s, _ = collect_for_config(g_eval, l_eval, cfg["env"], cfg["impulse"], seed=1000000)
         D = src_s.shape[-1]
-        src_flat = src_s.reshape(-1, D).float().to(device)
-        tgt_flat = tgt_s.reshape(-1, D).float().to(device)
 
+        if representation.startswith("rollout_"):
+            T = t_roll or (src_s.shape[1] - 1)
+            z_src = rollout_state(model, src_s, T, device)
+            z_tgt = rollout_state(model, tgt_s, T, device)
+            
+            src_ref = src_s[:, min(T, src_s.shape[1]-1), :].float().to(device)
+            tgt_ref = tgt_s[:, min(T, tgt_s.shape[1]-1), :].float().to(device)
+        else:
+            z_src = z_tgt = None
+            src_ref = src_s.reshape(-1, D).float().to(device)
+            tgt_ref = tgt_s.reshape(-1, D).float().to(device)
+        
         for top_k in [1, 2, 3, 4, 5]:
-            dims = dims_from_direction(direction, top_k)
+            dims = np.argsort(np.abs(direction))[-top_k:]
             for mode in ["real", "rand_values", "rand_dims"]:
                 shift, shift_src, bl, pt, bl_s, pt_s = patch_trajectories(
-                    model, src_flat, tgt_flat, dims, patch_mode=mode, rng=rng)
+                    model, src_ref, tgt_ref, dims, patch_mode=mode, rng=rng,
+                    space=space, z_source=z_src, z_target=z_tgt)
                 writer.writerow([
                     meta["checkpoint"], meta["variable"], f"g{g_eval}_l{l_eval}",
                     cfg["latent"], cfg["k"], top_k, is_ood, mode,
@@ -58,14 +75,16 @@ if __name__ == "__main__":
 
     csv_handles = {}
     for rf in readout_files:
+        
         d = np.load(rf, allow_pickle=True)
         direction = d["direction"]
         meta = {k: d[k].item() for k in d.files if k != "direction"}
-
+        representation = meta.get("layer", "computational")
         variable = meta["variable"]
+        patch_space = "h" if representation == "rollout_h" else "z"
         if variable in ("g_over_l", "sqrt_l_over_g"):
             continue
-
+        
         checkpoint = meta["checkpoint"]
         model_file = Path(checkpoint)
         if not model_file.exists():
@@ -83,7 +102,8 @@ if __name__ == "__main__":
         if model_key not in model_cache:
             model_cache[model_key] = load_model(model_file, cfg, args.device)
         model = model_cache[model_key]
-
+        if representation.startswith("rollout_") and not isinstance(model, WorldModelRSSM):
+            continue
         env_tag = "cartpole" if cfg["env"]=="CartPoleSim" else "pendulum"
         policy_tag = "sparse" if cfg["impulse"] else "noise"
         
@@ -107,7 +127,11 @@ if __name__ == "__main__":
         fh, writer = csv_handles[group]
 
         print(f"[{checkpoint}] var={variable} method={args.method}")
-        PATCH_METHODS[args.method](model, direction, meta, cfg, writer, args.device, rng)
+        # print(rf, direction.shape, meta.get("layer"))
+        PATCH_METHODS[args.method](model, direction, meta, cfg, writer,
+                                   args.device, rng,
+                                   representation=representation,
+                                   t_roll=meta.get("t_roll") or None)
         fh.flush()
 
     for fh, _ in csv_handles.values():

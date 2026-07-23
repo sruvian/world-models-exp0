@@ -18,8 +18,10 @@ def collect_activations(model, states, actions):
     for handle in handles:
         handle.remove()
     if isinstance(c, tuple):
-        c = c[1]
-    acts["computational"] = c.detach()
+        acts["computational"] = c[1].detach()
+        acts["computational_full"] = torch.cat(c, dim=-1).detach()
+    else:
+        acts["computational"] = c.detach()
     ts = model.layer_timesteps() if hasattr(model, "layer_timesteps") else {}
     ts.setdefault("computational", "current")
     return acts, ts

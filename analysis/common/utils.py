@@ -15,7 +15,19 @@ KNOWN_REGIMES = {"combined", "holdg", "holdl", "single"}
 
 MODEL_NAMES = ("WorldModelDMD", "WorldModelGRU", "WorldModelRSSM", "WorldModelVAE", "Protocol A", "Protocol B")
 TAGS = {"WorldModel": 'mlp', "WorldModelVAE": 'vae', "WorldModelDMD": 'dmd', "WorldModelGRU": 'gru', "WorldModelRSSM": 'rssm'}
-
+def rollout_state(model, states, T_roll, device="cpu"):
+    model.eval()
+    with torch.no_grad():
+        s = states.float().to(device)
+        comp = model.encode_computational(s[:, 0, :])
+        a = torch.zeros(s.shape[0], 1, device=device)
+        for t in range(min(T_roll, s.shape[1] - 1)):
+            comp = model.step_computational(comp, a)
+            obs = model.encode_computational(s[:, t + 1, :])
+            if isinstance(comp, tuple):
+                comp = (comp[0], obs[1] if isinstance(obs, tuple) else obs)
+        return comp
+    
 def parse_model(path: Path) -> dict:
     name = path.stem
     parts = name.split("_")

@@ -47,75 +47,68 @@ def _shift_from_patched(model, z_source, z_target, z_patched, action, source_tra
     return shift, shift_source, baseline_err, patched_err, baseline_err_source, patched_err_source
 
 
-def patch_trajectories(model: WorldModel | WorldModelDMD| WorldModelGRU| WorldModelRSSM,
-                       source_traj: torch.Tensor, target_traj: torch.Tensor,
-                       angular_dims, patch_mode: str = "real",
-                       rng: np.random.Generator = None):
+def patch_trajectories(model, source_traj, target_traj, angular_dims,
+                       patch_mode="real", rng=None, space="z",
+                       z_source=None, z_target=None):
 
-    z_source = model.encode_computational(source_traj)
-    z_target = model.encode_computational(target_traj)
-    batch = source_traj.shape[0]
+    if z_source is None:
+        z_source = model.encode_computational(source_traj)
+    if z_target is None:
+        z_target = model.encode_computational(target_traj)
+
+    is_rssm = isinstance(model, WorldModelRSSM)
+    batch = (z_source[0] if is_rssm else z_source).shape[0]
     action = torch.zeros(batch, 1)
     k = len(angular_dims)
+    
+    if is_rssm:
+        ptc_idx  = 0 if space == "h" else 1
+        src_blk  = z_source[ptc_idx]
+        dim_total = src_blk.shape[1]
 
-    if isinstance(model, WorldModelRSSM):
-        latent_dim = z_source[1].shape[1]
-        h_ptc, z_ptc = z_target[0].clone(), z_target[1].clone()
-        if patch_mode == "real":
-            z_ptc[:, angular_dims] = z_source[1][:, angular_dims]
-            z_patched = (h_ptc, z_ptc)
-            return _shift_from_patched(model, z_source, z_target, z_patched, action, source_traj)
+        def make_patched(dims_used):
+            blocks = [z_target[0].clone(), z_target[1].clone()]
+            blocks[ptc_idx][:, dims_used] = src_blk[:, dims_used]
+            return (blocks[0], blocks[1])
 
-        elif patch_mode == "rand_values":
-            z_ptc[:, angular_dims] = torch.randn_like(z_source[1][:, angular_dims])
-            z_patched = (h_ptc, z_ptc)
-            return _shift_from_patched(model, z_source, z_target, z_patched, action, source_traj)
-
-        elif patch_mode == "rand_dims":
-            if rng is None:
-                raise ValueError("rand_dims requires an rng")
-            probe_set = set(int(d) for d in angular_dims)
-            candidates = np.array([d for d in range(latent_dim) if d not in probe_set])
-            pool = candidates if len(candidates) >= k else np.arange(latent_dim)
-
-            draws = []
-            for _ in range(N_RAND_DIM_DRAWS):
-                dims = rng.choice(pool, size=k, replace=False)
-                h_ptc, z_ptc = z_target[0].clone(), z_target[1].clone()
-                z_ptc[:, dims] = z_source[1][:, dims]
-                z_patched = (h_ptc, z_ptc)
-                draws.append(_shift_from_patched(model, z_source, z_target, z_patched, action, source_traj))
-            arr = np.array(draws, dtype=float)
-            return tuple(arr.mean(axis=0).tolist())
-
+        def make_randval():
+            blocks = [z_target[0].clone(), z_target[1].clone()]
+            blocks[ptc_idx][:, angular_dims] = torch.randn_like(src_blk[:, angular_dims])
+            return (blocks[0], blocks[1])
     else:
-        latent_dim = z_source.shape[1]
-        z_patched = z_target.clone()
-        if patch_mode == "real":
-            
-            z_patched[:, angular_dims] = z_source[:, angular_dims]
-            return _shift_from_patched(model, z_source, z_target, z_patched, action, source_traj)
+        dim_total = z_source.shape[1]
 
-        elif patch_mode == "rand_values":
-            z_patched[:, angular_dims] = torch.randn_like(z_source[:, angular_dims])
-            return _shift_from_patched(model, z_source, z_target, z_patched, action, source_traj)
+        def make_patched(dims_used):
+            zp = z_target.clone()
+            zp[:, dims_used] = z_source[:, dims_used]
+            return zp
 
-        elif patch_mode == "rand_dims":
-            if rng is None:
-                raise ValueError("rand_dims requires an rng")
-            probe_set = set(int(d) for d in angular_dims)
-            candidates = np.array([d for d in range(latent_dim) if d not in probe_set])
-            pool = candidates if len(candidates) >= k else np.arange(latent_dim)
+        def make_randval():
+            zp = z_target.clone()
+            zp[:, angular_dims] = torch.randn_like(z_source[:, angular_dims])
+            return zp
 
-            draws = []
-            for _ in range(N_RAND_DIM_DRAWS):
-                dims = rng.choice(pool, size=k, replace=False)
-                z_patched = z_target.clone()
-                z_patched[:, dims] = z_source[:, dims]
-                draws.append(_shift_from_patched(model, z_source, z_target, z_patched, action, source_traj))
-            arr = np.array(draws, dtype=float)
-            return tuple(arr.mean(axis=0).tolist())
+    if patch_mode == "real":
+        return _shift_from_patched(model, z_source, z_target,
+                                   make_patched(angular_dims), action, source_traj)
 
+    if patch_mode == "rand_values":
+        return _shift_from_patched(model, z_source, z_target,
+                                   make_randval(), action, source_traj)
+
+    if patch_mode == "rand_dims":
+        if rng is None:
+            raise ValueError("rand_dims requires an rng")
+        probe_set = set(int(d) for d in angular_dims)
+        candidates = np.array([d for d in range(dim_total) if d not in probe_set])
+        pool = candidates if len(candidates) >= k else np.arange(dim_total)
+        draws = [
+            _shift_from_patched(model, z_source, z_target,
+                                make_patched(rng.choice(pool, size=k, replace=False)),
+                                action, source_traj)
+            for _ in range(N_RAND_DIM_DRAWS)
+        ]
+        return tuple(np.array(draws, dtype=float).mean(axis=0).tolist())
 
 def make_env_for_config(env_name: str, g: float, l: float, seed: int):
     if env_name == "CartPoleSim":
@@ -131,7 +124,7 @@ def make_env_for_config(env_name: str, g: float, l: float, seed: int):
 
 
 COLLECTOR = {
-    "num_trajectories": 50,
+    "num_trajectories": 500,
     "episode_time": 100,
     "policy_seed": 35,
     "save": False,
