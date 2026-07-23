@@ -22,24 +22,27 @@ class ValidationSuite:
         action = action.reshape(-1, 1) 
         with torch.no_grad():
             enc = self.checker.encode(states)
-            h, z = self.checker._split(enc)
-            z = z.detach()
-        dz = torch.zeros_like(z, requires_grad=True)
-        optimiser = torch.optim.Adam([dz], lr=self.lr)
+            blk, other = self.checker._pick(enc)
+            blk = blk.detach()
+        d = torch.zeros_like(blk, requires_grad=True)
+        optimiser = torch.optim.Adam([d], lr=self.lr)
         for _ in range(200):
             optimiser.zero_grad()
-            pred = self.checker.decode(self.checker.step(self.checker._join(h, z + dz), action))
+            pred = self.checker.decode(
+                self.checker.step(self.checker._rejoin(blk + d, other), action))
             channel_scale = target.std(dim=0) + 1e-6
-            loss = (1*(((target - pred) / channel_scale)**2).sum() + self.lam_reg * (dz**2).sum())
+            loss = ((((target - pred) / channel_scale)**2).sum()
+                    + self.lam_reg * (d**2).sum())
             loss.backward()
             optimiser.step()
         with torch.no_grad():
-            final_decode = self.checker.decode(self.checker.step(self.checker._join(h, z + dz), action))
+            final_decode = self.checker.decode(
+                self.checker.step(self.checker._rejoin(blk + d, other), action))
             final_err = ((target - final_decode)**2).sum().sqrt()
             target_norm = (target**2).sum().sqrt() + 1e-9
             ceiling_rel = (final_err / target_norm).item()
-            return dz.detach(), final_err.detach(), ceiling_rel, z.norm()
-
+            return d.detach(), final_err.detach(), ceiling_rel, blk.norm()
+    
     def direction_transport(self, source_states: torch.Tensor, source_config: dict, target_config:dict, channel: int,
                 probe_direction: np.ndarray, target_value, action: torch.Tensor, target_states: torch.Tensor | None = None):
         ground_truths, model_shifts = [], []
@@ -76,7 +79,9 @@ class ValidationSuite:
         oracle_targets = torch.tensor(np.array(oracle_targets), dtype=torch.float32)
 
         dz, final_error, final_pred, latent = self.optimisation_bound(source_states, action, oracle_targets)
-        dz_opt, dy_opt = self.checker.optimal_intervention(source_states, oracle_targets, action)
+        opt = self.checker.optimal_intervention(source_states, oracle_targets, action,
+                                                probe_direction=probe_direction)
+        dz_opt, dy_opt = opt["dz_opt"], opt["dy_opt"]
         cos_sim_dyzopt_dz = direction_alignment(dz, dz_opt)
         cos_sim_dz = direction_alignment(dz, probe_direction)
         cos_sim_dyzopt_probe = direction_alignment(dz_opt, probe_direction)
@@ -85,16 +90,23 @@ class ValidationSuite:
         target_value = self.calibrate_target(calibration_pool, probe_direction)
         probe_result = self.direction_transport(source_states, source_config, target_config, channel,
                                                 probe_direction, target_value, action, target_states)
-        null_dicts = []
-        rand_tvs = []
+        rands = []
         for seed in range(n_null):
             rng = np.random.default_rng(seed)
-            rand = rng.standard_normal(probe_direction.shape).astype(np.float32)
-            rand = rand / np.linalg.norm(rand) * np.linalg.norm(probe_direction)
-            rand_tv = self.calibrate_target(calibration_pool, rand)
-            rand_tvs.append(float(rand_tv))
-            null_dicts.append(self.direction_transport(source_states, source_config, target_config, channel,
-                                                       rand, rand_tv, action, target_states))
+            r = rng.standard_normal(probe_direction.shape).astype(np.float32)
+            rands.append(r / np.linalg.norm(r) * np.linalg.norm(probe_direction))
+
+        cosines, rels = self.checker.output_alignment(source_states, oracle_targets, action, [probe_direction] + rands)
+        cos_probe, cos_rand = cosines[0], np.array(cosines[1:])
+        rel_probe, rel_rand = rels[0], np.array(rels[1:])
+
+        rand_tvs, null_dicts = [], []
+        for r in rands:
+            tv = self.calibrate_target(calibration_pool, r)
+            rand_tvs.append(float(tv))
+            null_dicts.append(self.direction_transport(
+                source_states, source_config, target_config, channel,
+                r, tv, action, target_states))
         null = null_summary(null_dicts)
         probe_slope = probe_result["slope"]
         return {
@@ -116,6 +128,12 @@ class ValidationSuite:
             **pca_operator(dz, probe_direction),
             "probe_result": probe_result,
             "null_dicts": null_dicts,
+            "cos_Jw_r": opt.get("cos_Jw_r"),
+            "Jw_rel_norm": opt.get("Jw_rel_norm"),
+            "cos_Jw_r_null_mean": float(np.nanmean(cos_rand)),
+            "cos_Jw_r_null_95": float(np.nanpercentile(np.abs(cos_rand), 95)),
+            "Jw_rel_norm": rel_probe,
+            "Jw_rel_null_mean": float(np.nanmean(rel_rand)),
         }
 
 
@@ -132,7 +150,8 @@ class ValidationSuite:
 
         true_effects = oracle_targets.numpy()[:, channel] - base_nexts[:, channel]
         dz, final_error, final_pred, latent = self.optimisation_bound(source_states, action, oracle_targets)
-        encoded_states = self.checker.encode(source_states)
+        enc = self.checker.encode(source_states)
+        blk, _ = self.checker._pick(enc)
         dists, fracs, natives = [], [], []
         for i in range(len(source_states)):
             for j in range(len(source_states)):
@@ -140,7 +159,7 @@ class ValidationSuite:
                     continue
                 model_eff = self._apply_dz(source_states[j], dz[i], action[j: j+1], channel)
                 frac = model_eff / true_effects[j]
-                dist = float((encoded_states[i] - encoded_states[j]).norm())
+                dist = dist = float((blk[i] - blk[j]).norm())
                 if i == j:
                     natives.append(frac)
                 else:
@@ -161,14 +180,15 @@ class ValidationSuite:
 
     def _apply_dz(self, state, dz, action, channel):
         with torch.no_grad():
-            z = self.checker.encode(state)
-            base = self.checker.decode(self.checker.step(z, action))
-            patched = self.checker.decode(self.checker.step(z + dz, action))
+            enc = self.checker.encode(state)
+            blk, other = self.checker._pick(enc)
+            base = self.checker.decode(self.checker.step(self.checker._rejoin(blk, other), action))
+            patched = self.checker.decode(self.checker.step(self.checker._rejoin(blk + dz, other), action))
         return (patched - base)[channel].item()
 
     def calibrate_target(self, target_states, probe_directions):
         w_t = torch.from_numpy(probe_directions) if isinstance(probe_directions, np.ndarray) else probe_directions
         with torch.no_grad():
             enc = self.checker.encode(target_states)
-            _, z = self.checker._split(enc)
-            return float((z @ w_t).mean())
+            blk, _ = self.checker._pick(enc)
+            return float((blk @ w_t).mean())

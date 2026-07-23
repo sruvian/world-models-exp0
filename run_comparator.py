@@ -3,11 +3,12 @@ import argparse, glob, csv
 from pathlib import Path
 import numpy as np
 import torch
-from analysis.common.utils import parse_model, load_model, TAGS
+from analysis.common.utils import parse_model, load_model, TAGS, rollout_state
 from analysis.common.regime import checkable_vars, INTERVENTION
 from analysis.common.data_provider import collect_for_config
 from analysis.do_checker.checker import DoChecker
 from analysis.do_checker.val_suite import ValidationSuite
+from models import WorldModelRSSM
 
 ALL_CONFIGS = [(5.0,2.0),(5.0,10.0),(5.0,18.0),(9.8,2.0),(9.8,10.0),
                (9.8,18.0),(15.0,2.0),(15.0,10.0),(15.0,18.0)]
@@ -50,6 +51,8 @@ if __name__ == "__main__":
     ap.add_argument("--save_dir", required = True)
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--manifold_mult", type=float, default=2.0)
+    ap.add_argument("--n_traj", default=20, type = int)
+    ap.add_argument("--steps", default = 50, type= int)
     args = ap.parse_args()
 
     csv_handles = {}
@@ -76,22 +79,43 @@ if __name__ == "__main__":
             model_cache[mf] = load_model(mf, cfg, args.device)
         model = model_cache[mf]
 
-        checker = DoChecker(
-            encode=model.encode_computational,
-            step=model.step_computational,
-            decode=model.decode_computational,
-            env=cfg["env"], manifold_mult=args.manifold_mult)
-        suite = ValidationSuite(checker)
-
         (gs, ls), (gt, lt) = source_target_configs(variable, cfg)
         source_config = config_dict(cfg["env"], gs, ls)
         target_config = config_dict(cfg["env"], gt, lt)
         iv = INTERVENTION[variable]
         channel = iv.get("channel")
 
-        src_s, src_a = collect_for_config(gs, ls, cfg["env"], cfg["impulse"], seed=4200, n_traj=20, steps=50)
-        source_states = src_s.reshape(-1, src_s.shape[-1]).float()
-        actions = src_a.reshape(-1, 1).float()
+        src_s, src_a = collect_for_config(gs, ls, cfg["env"], cfg["impulse"],
+                                          seed=4200, n_traj=args.n_traj, steps=args.steps)
+
+        representation = meta.get("layer", "computational")
+        space = "h" if representation == "rollout_h" else "z"
+        if space == "h":
+            t_roll = meta.get("t_roll") or (src_s.shape[1] - 1)
+            h_T, z_T = rollout_state(model, src_s, t_roll, args.device)
+            source_states = src_s[:, min(t_roll, src_s.shape[1] - 1), :].float()
+            actions = torch.zeros(source_states.shape[0], 1)
+
+            key = {tuple(np.round(source_states[i].numpy(), 6)): i
+                for i in range(source_states.shape[0])}
+
+            def rolled_encode(s):
+                s2 = s if s.ndim == 2 else s.unsqueeze(0)
+                idx = [key[tuple(np.round(row.numpy(), 6))] for row in s2]
+                return (h_T[idx], z_T[idx])
+
+            encode_fn = rolled_encode
+        else:
+            source_states = src_s.reshape(-1, src_s.shape[-1]).float()
+            actions = src_a.reshape(-1, 1).float()
+            encode_fn = model.encode_computational
+
+        checker = DoChecker(encode=encode_fn, step=model.step_computational,
+                            decode=model.decode_computational,
+                            env=cfg["env"], manifold_mult=args.manifold_mult,
+                            space=space)
+        suite = ValidationSuite(checker)
+
         calibration_pool = source_states
 
         if iv["type"] == "state":
@@ -122,7 +146,11 @@ if __name__ == "__main__":
                             "dz_probe_cossim","dzopt_probe_cossim","survival","probe_slope","clears_null",
                             "null_95","null_mean","null_max","null_nonnan",
                             "probe_target_value","null_target_mean",
-                            "pc1_var","pc1_probe_cos"])
+                            "pc1_var","pc1_probe_cos", "cos_Jw_r", "Jw_rel_norm",
+                            "cos_Jw_r_null_mean",
+                            "cos_Jw_r_null_95",
+                            "Jw_rel_null_mean",
+                            ])
             csv_handles[group] = (fh, w)
         fh, w = csv_handles[group]
         w.writerow([
@@ -132,7 +160,11 @@ if __name__ == "__main__":
             result["probe_survival"], result["probe_slope"], result["clears_null"],
             result["null_95"], result.get("null_mean"), result.get("null_max"), result.get("null_nonnan"),
             result.get("probe_target_value"), result.get("null_target_mean"),
-            result.get("pc1_var"), result.get("pc1_probe_cos"),
+            result.get("pc1_var"), result.get("pc1_probe_cos"),result.get('cos_Jw_r'), result.get('Jw_rel_norm'),
+            result.get("cos_Jw_r_null_mean"),
+            result.get("cos_Jw_r_null_95"),
+            result.get("Jw_rel_null_mean"),
+            
         ])
         fh.flush()
         print(f"[{meta['checkpoint']}] {variable}: ceiling={result['ceiling_err']:.4f} "

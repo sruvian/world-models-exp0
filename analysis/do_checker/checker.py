@@ -4,13 +4,14 @@ from sim_envs import make_env
 
 class DoChecker():
 
-    def __init__(self, encode, step, decode, env, manifold_mult) -> None:
+    def __init__(self, encode, step, decode, env, manifold_mult, space = 'z') -> None:
         
         self.env = env
         self.encode = encode
         self.step = step
         self.decode = decode
         self.manifold_mult = manifold_mult
+        self.space = space
 
     def validate(self, source_state: np.ndarray| torch.Tensor, target_state: torch.Tensor|None, source_config: dict, target_config:dict, action):
         seed = 0
@@ -35,15 +36,15 @@ class DoChecker():
     def intervene(self, source_state, target_value, probe_direction, action, patch=True):
         with torch.no_grad():
             enc = self.encode(source_state)
-            h, z = self._split(enc)
+            blk, other = self._pick(enc)
             if patch:
-                w = torch.from_numpy(probe_direction)
-                encoder_shift = ((target_value - (z @ w)) * w) / (w @ w)
+                w = torch.from_numpy(probe_direction) if isinstance(probe_direction, np.ndarray) else probe_direction
+                shift = ((target_value - (blk @ w)) * w) / (w @ w)
             else:
-                encoder_shift = torch.zeros_like(z)
-            z_patched = z + encoder_shift
-            on_manifold_dict = self._on_manifold(encoder_shift, z)
-            transition = self.step(self._join(h, z_patched), action)
+                shift = torch.zeros_like(blk)
+            blk_patched = blk + shift
+            on_manifold_dict = self._on_manifold(shift, blk)
+            transition = self.step(self._rejoin(blk_patched, other), action)
             dec = self.decode(transition)
         return {"decoder": dec, **on_manifold_dict}
 
@@ -73,30 +74,63 @@ class DoChecker():
                 "z_norm": z_norm,
                 "rel_shift": shift_norm/ z_norm}
 
-    def optimal_intervention(self, source_states, oracle_targets, action):
-        dz_opts, dy_opts = [], []
+    def optimal_intervention(self, source_states, oracle_targets, action, probe_direction=None):
+        dz_opts, dy_opts, cos_outs, jw_rels = [], [], [], []
         W = 1.0 / (torch.as_tensor(oracle_targets, dtype=torch.float32).std(dim=0) + 1e-6)
 
         for i in range(len(source_states)):
             enc = self.encode(source_states[i:i+1])
-            h, z = self._split(enc)
-            z = z.detach().requires_grad_(True)
+            blk, other = self._pick(enc)
+            blk = blk.detach().requires_grad_(True)
             a = action[i:i+1]
-            def f(zz):
-                return self.decode(self.step(self._join(h, zz), a))
-            y = f(z)
-            J = torch.autograd.functional.jacobian(f, z).reshape(y.shape[-1], z.shape[-1])
-            J_W = J *W[:, None]
+
+            def f(bb):
+                return self.decode(self.step(self._rejoin(bb, other), a))
+
+            y = f(blk)
+            J = torch.autograd.functional.jacobian(f, blk).reshape(y.shape[-1], blk.shape[-1])
+            J_W = J * W[:, None]
             residual = torch.as_tensor(oracle_targets[i], dtype=torch.float32) - y.squeeze(0)
-            r_W = residual*W
-            # dz_opt = torch.linalg.pinv(J) @ residual
+            r_W = residual * W
             try:
                 dz_opt = torch.linalg.pinv(J_W) @ r_W
             except RuntimeError:
-                dz_opt = torch.full_like(z.squeeze(0), float("nan"))
+                dz_opt = torch.full_like(blk.squeeze(0), float("nan"))
             dz_opts.append(dz_opt)
             dy_opts.append(J @ dz_opt)
-        return torch.stack(dz_opts), torch.stack(dy_opts)
+
+
+        out = {"dz_opt": torch.stack(dz_opts), "dy_opt": torch.stack(dy_opts)}
+        
+        return out
+    
+    def output_alignment(self, source_states, oracle_targets, action, directions):
+        ws = [torch.from_numpy(d).float() if isinstance(d, np.ndarray) else d.float()
+              for d in directions]
+        cos_acc = [[] for _ in ws]
+        rel_acc = [[] for _ in ws]
+
+        for i in range(len(source_states)):
+            enc = self.encode(source_states[i:i+1])
+            blk, other = self._pick(enc)
+            blk = blk.detach().requires_grad_(True)
+            a = action[i:i+1]
+
+            def f(bb):
+                return self.decode(self.step(self._rejoin(bb, other), a))
+
+            y = f(blk)
+            J = torch.autograd.functional.jacobian(f, blk).reshape(y.shape[-1], blk.shape[-1])
+            r = torch.as_tensor(oracle_targets[i], dtype=torch.float32) - y.squeeze(0)
+            rn = r.norm() + 1e-9
+
+            for k, w in enumerate(ws):
+                Jw = J @ w
+                cos_acc[k].append(float((Jw @ r) / (Jw.norm() * rn + 1e-9)))
+                rel_acc[k].append(float(Jw.norm() / (w.norm() + 1e-9)))
+
+        return ([float(np.nanmean(c)) for c in cos_acc],
+                [float(np.nanmean(v)) for v in rel_acc])
     
     def _split(self, enc):
         if isinstance(enc, tuple):
@@ -105,3 +139,12 @@ class DoChecker():
 
     def _join(self, h, z):
         return (h, z) if h is not None else z
+    
+    def _pick(self, enc):
+        h, z = self._split(enc)
+        return (h, z) if self.space == "h" else (z, h)
+    
+    def _rejoin(self, blk, other):
+        if self.space == "h":
+            return self._join(blk, other)
+        return self._join(other, blk)      
