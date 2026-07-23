@@ -112,7 +112,7 @@ def run_probe(train_z: np.ndarray, val_z: np.ndarray,
 
 
 def stratified_probe_split(model, all_states, gravities, lengths,
-                           is_cartpole, train_frac=0.8, regime="combined", representation="latent", roll = 200):
+                           is_cartpole, train_frac=0.8, regime="combined", representation="latent", roll = 200, probe_target = "full"):
     train_s, val_s, train_g, val_g, train_l, val_l = [], [], [], [], [], []
 
     for states_c, g_c, l_c in zip(all_states, gravities, lengths):
@@ -141,8 +141,8 @@ def stratified_probe_split(model, all_states, gravities, lengths,
         train_z_flat = train_z.reshape(-1, latent_dim).numpy()
         val_z_flat   = val_z.reshape(-1, latent_dim).numpy()
     elif representation == "latent_full":
-        train_z = generate_latents_rollout(model, train_states, full=True,max_steps=roll)
-        val_z   = generate_latents_rollout(model, val_states, full=True, max_steps=roll)
+        train_z = generate_latents_rollout(model, train_states, full=True,max_steps=roll, probe_target=probe_target)
+        val_z   = generate_latents_rollout(model, val_states, full=True, max_steps=roll, probe_target=probe_target)
         latent_dim = train_z.shape[-1]
         train_z_flat = train_z.reshape(-1, latent_dim).numpy()
         val_z_flat   = val_z.reshape(-1, latent_dim).numpy()
@@ -199,7 +199,8 @@ if __name__ == "__main__":
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--state_type", default='latent')
     ap.add_argument("--neighbours", default = 5, type = int)
-    ap.add_argument("--roll", type = int, default = 200)
+    ap.add_argument("--roll", type = int, default = 1200)
+    ap.add_argument("--probe_target", default = 'full')
     args = ap.parse_args()
     if args.state_type == "state":
         args.random_init = False
@@ -232,7 +233,7 @@ if __name__ == "__main__":
                     "latent": cfg["latent"], "k": cfg["k"], "policy": tag}
 
             train_z, val_z, train_t, val_t = stratified_probe_split(
-                model, states, gravities, lengths, is_cp, regime=cfg["regime"], representation=args.state_type, roll=args.roll)
+                model, states, gravities, lengths, is_cp, regime=cfg["regime"], representation=args.state_type, roll=args.roll, probe_target = args.probe_target)
             print("=== Trained ===")
             for tn in train_t:
                 run_probe(train_z, val_z, train_t[tn], val_t[tn], tn, writer, meta, args.alpha, args.neighbours,)
