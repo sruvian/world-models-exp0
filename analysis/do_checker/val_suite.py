@@ -54,11 +54,6 @@ class ValidationSuite:
                     gt_norm = np.linalg.norm(gt_vec) + 1e-9
                     ground_truths.append(gt_norm)
                     model_shifts.append(float(model_vec @ gt_vec / gt_norm))
-                elif channel == 1:
-                    ground_truth_theta = np.arctan2(delta_ground_truth[1], delta_ground_truth[0])
-                    model_shift_theta = np.arctan2(delta_model_shifts[1], delta_model_shifts[0])
-                    ground_truths.append(ground_truth_theta)
-                    model_shifts.append(model_shift_theta)
                 else:
                     ground_truths.append(delta_ground_truth[channel])
                     model_shifts.append(delta_model_shifts[channel])
@@ -126,8 +121,6 @@ class ValidationSuite:
 
     def state_transfer(self, source_states, source_config, target_config, channel,
                    action, target_states=None, n_bins=4):
-        if channel == 1 or channel == 0:
-            raise NotImplementedError("Yet to be implemented for theta")
         oracle_targets, base_nexts = [], []
         for i, state in enumerate(source_states):
             target_state = None if target_states is None else target_states[i]

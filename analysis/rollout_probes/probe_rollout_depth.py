@@ -73,7 +73,7 @@ if __name__ == "__main__":
         if write_header:
             writer.writerow([
                 "checkpoint", "model_config", "eval_config", "latent_dim", "k", "depth",
-                "r2_theta", "r2s_theta", "delta_theta",
+                "r2_cos_theta", "r2s_cos_theta", "delta_cos_theta", "r2_sin_theta", "r2s_sin_theta", "delta_sin_theta",
                 "r2_thetadot", "r2s_thetadot", "delta_thetadot",
                 "r2_x", "r2s_x", "delta_x",
                 "r2_xdot", "r2s_xdot", "delta_xdot",
@@ -109,11 +109,14 @@ if __name__ == "__main__":
                         z_np = model.probe_representation(comp_current).numpy()
                     s_true = states_t[:, depth, :]
 
-                    theta_true = torch.atan2(s_true[:, 1], s_true[:, 0]).numpy()
+                    cos_theta_true = s_true[:, 0].numpy()
+                    sin_theta_true = s_true[:, 1].numpy()
                     thetadot_true = s_true[:, 2].numpy()
-                    r2_th, r2s_th = probe_at_depth(z_np, theta_true, args.alpha)
+                    r2_cth, r2s_cth = probe_at_depth(z_np, cos_theta_true, args.alpha)
+                    r2_sth, r2s_sth = probe_at_depth(z_np, sin_theta_true, args.alpha)
                     r2_td, r2s_td = probe_at_depth(z_np, thetadot_true, args.alpha)
-                    delta_th = round(r2_th - r2s_th, 6) if not (np.isnan(r2_th) or np.isnan(r2s_th)) else float('nan')
+                    delta_cth = round(r2_cth - r2s_cth, 6) if not (np.isnan(r2_cth) or np.isnan(r2s_cth)) else float('nan')
+                    delta_sth = round(r2_sth - r2s_sth, 6) if not (np.isnan(r2_sth) or np.isnan(r2s_sth)) else float('nan')
                     delta_td = round(r2_td - r2s_td, 6) if not (np.isnan(r2_td) or np.isnan(r2s_td)) else float('nan')
 
                     if state_dim == 5:
@@ -128,7 +131,7 @@ if __name__ == "__main__":
                     writer.writerow([
                         Path(mf).name, cfg["config"], f"g{g_eval}_l{l_eval}",
                         cfg["latent"], cfg["k"], depth,
-                        r2_th, r2s_th, delta_th, r2_td, r2s_td, delta_td,
+                        r2_cth, r2s_cth, delta_cth, r2_sth, r2s_sth, delta_sth, r2_td, r2s_td, delta_td,
                         r2_x, r2s_x, delta_x, r2_xd, r2s_xd, delta_xd,
                     ])
                     csv_file.flush()

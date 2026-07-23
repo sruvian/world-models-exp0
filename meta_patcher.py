@@ -63,7 +63,7 @@ if __name__ == "__main__":
         meta = {k: d[k].item() for k in d.files if k != "direction"}
 
         variable = meta["variable"]
-        if variable in ("g_over_l", "sqrt_l_over_g", "theta"):
+        if variable in ("g_over_l", "sqrt_l_over_g"):
             continue
 
         checkpoint = meta["checkpoint"]

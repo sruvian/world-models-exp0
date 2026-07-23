@@ -1,6 +1,6 @@
 def probeable_vars(regime: str, is_cartpole: bool = False) -> list[str]:
     """Variables that VARY in this regime (hence probeable/checkable)."""
-    base = ["theta", "theta_dot"]
+    base = ["cos_theta", "sin_theta", "theta_dot"]
     if is_cartpole:
         base += ["x", "x_dot"]
     if regime in ("holdl", "combined"):
@@ -12,7 +12,8 @@ def probeable_vars(regime: str, is_cartpole: bool = False) -> list[str]:
     return base
 
 INTERVENTION = {
-    "theta":         {"type": "none"},
+    "cos_theta":  {"type": "state", "channel": 0},
+    "sin_theta":  {"type": "state", "channel": 1},
     "theta_dot":     {"type": "state",  "channel": 2},
     "x":             {"type": "state",  "channel": 3},
     "x_dot":         {"type": "state",  "channel": 4},

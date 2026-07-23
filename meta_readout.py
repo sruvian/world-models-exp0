@@ -46,13 +46,13 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--models_dir", required=True)
     ap.add_argument("--readout_type", required=True, choices=list(READOUT_METHODS))
-    ap.add_argument("--out_dir", default="readouts")
+    ap.add_argument("--save_dir", default="readouts")
     ap.add_argument("--device", default="cpu")
     args = ap.parse_args()
 
     groups = iter_model_groups(args.models_dir)
     for (env_tag, policy_tag, model_tag), model_files in groups.items():
-        out_sub = Path(args.out_dir) / f"{env_tag}_{policy_tag}_{model_tag}"
+        out_sub = Path(args.save_dir) / f"{env_tag}_{policy_tag}_{model_tag}"
         out_sub.mkdir(parents=True, exist_ok=True)
 
         for mf in model_files:

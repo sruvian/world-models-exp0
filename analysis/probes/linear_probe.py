@@ -99,7 +99,8 @@ def stratified_probe_split(model, all_states, gravities, lengths,
     def build_targets(states, g_t, l_t, regime):
         vars_here = probeable_vars(regime, is_cartpole)
         t = {}
-        if "theta" in vars_here:      t["theta"] = torch.atan2(states[:, :, 1], states[:, :, 0]).reshape(-1).numpy()
+        if "cos_theta" in vars_here:      t["cos_theta"] =  states[:, :, 0].reshape(-1).numpy()
+        if "sin_theta" in vars_here:      t["sin_theta"] =  states[:, :, 1].reshape(-1).numpy()
         if "theta_dot" in vars_here:  t["theta_dot"] = states[:, :, 2].reshape(-1).numpy()
         if "x" in vars_here:          t["x"] = states[:, :, 3].reshape(-1).numpy()
         if "x_dot" in vars_here:      t["x_dot"] = states[:, :, 4].reshape(-1).numpy()
@@ -118,14 +119,14 @@ if __name__ == "__main__":
     ap.add_argument("--models_dir", required=True)
     ap.add_argument("--alpha", type=float, default=10.0)
     ap.add_argument("--random_init", action="store_true")
-    ap.add_argument("--out_dir", required = True)
+    ap.add_argument("--save_dir", required = True)
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--state_type", default='latent')
     args = ap.parse_args()
 
     for (env_tag, policy_tag, model_tag), files in iter_model_groups(args.models_dir).items():
         tag = f"{env_tag}_{policy_tag}_{model_tag}"
-        output_csv = f"{args.out_dir}/linear_probe_{tag}.csv"
+        output_csv = f"{args.save_dir}/linear_probe_{tag}.csv"
         os.makedirs(os.path.dirname(output_csv), exist_ok=True)
         write_header = not os.path.exists(output_csv)
         csv_file = open(output_csv, "a", newline="")

@@ -1,4 +1,3 @@
-# common/prepare_data.py
 import numpy as np
 import torch
 from .regime import probeable_vars, INTERVENTION
@@ -8,8 +7,11 @@ def build_targets(states, g_flat, l_flat, regime, is_cartpole):
     """Targets ONLY for variables that vary in this regime (via probeable_vars)."""
     vars_here = probeable_vars(regime, is_cartpole)
     t = {}
-    if "theta" in vars_here:
-        t["theta"] = np.arctan2(states[:, 1], states[:, 0])
+
+    if "cos_theta" in vars_here:
+        t["cos_theta"] = states[:, 0]
+    if "sin_theta" in vars_here:
+        t["sin_theta"] = states[:, 1]
     if "theta_dot" in vars_here:
         t["theta_dot"] = states[:, 2]
     if "x" in vars_here:
