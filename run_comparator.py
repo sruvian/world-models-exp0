@@ -99,9 +99,14 @@ if __name__ == "__main__":
             key = {tuple(np.round(source_states[i].numpy(), 6)): i
                 for i in range(source_states.shape[0])}
 
+            src_mat = source_states.numpy()
+
             def rolled_encode(s):
                 s2 = s if s.ndim == 2 else s.unsqueeze(0)
-                idx = [key[tuple(np.round(row.numpy(), 6))] for row in s2]
+                q = s2.detach().numpy()
+                d = ((src_mat[None, :, :] - q[:, None, :]) ** 2).sum(-1)
+                idx = d.argmin(1)
+                assert d.min(1).max() < 1e-6, f"no exact match, min dist {d.min(1).max():.2e}"
                 return (h_T[idx], z_T[idx])
 
             encode_fn = rolled_encode
