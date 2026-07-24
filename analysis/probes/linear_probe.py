@@ -54,7 +54,7 @@ def generate_latents_rollout(model, states: torch.Tensor,
 
         return torch.stack(outs, dim=1)
     
-def compute_mi(train_z, train_target, neighbours=5, n_sub=10000, n_perm=2, seed=0):
+def compute_mi(train_z, train_target, neighbours=5, n_sub=10000, n_perm=5, seed=0):
     rng = np.random.default_rng(seed)
     n = train_z.shape[0]
     if n > n_sub:
@@ -80,7 +80,7 @@ def compute_mi(train_z, train_target, neighbours=5, n_sub=10000, n_perm=2, seed=
 
 def run_probe(train_z: np.ndarray, val_z: np.ndarray,
               train_target: np.ndarray, val_target: np.ndarray,
-              label: str, writer, meta: dict, alpha: float, neighbours) -> tuple[float, float, float]:
+              label: str, writer, meta: dict, alpha: float, neighbours: int, perm: int) -> tuple[float, float, float]:
 
     if not np.isfinite(train_z).all() or not np.isfinite(val_z).all():
         print(f"{label}: SKIPPED (NaN/inf in latents)")
@@ -92,7 +92,7 @@ def run_probe(train_z: np.ndarray, val_z: np.ndarray,
     probe = Ridge(alpha=alpha)
     probe.fit(train_z, train_target)
     r2 = r2_score(val_target, probe.predict(val_z))
-    mi_mean, mi_max, perm, perm_max = compute_mi(train_z, train_target, neighbours)
+    mi_mean, mi_max, perm, perm_max = compute_mi(train_z, train_target, neighbours, n_perm=perm)
 
     shuffled = train_target.copy()
     np.random.shuffle(shuffled)
@@ -201,6 +201,7 @@ if __name__ == "__main__":
     ap.add_argument("--neighbours", default = 5, type = int)
     ap.add_argument("--roll", type = int, default = 1200)
     ap.add_argument("--probe_target", default = 'full')
+    ap.add_argument("--perm", default = 10, type = int)
     args = ap.parse_args()
     if args.state_type == "state":
         args.random_init = False
@@ -236,14 +237,14 @@ if __name__ == "__main__":
                 model, states, gravities, lengths, is_cp, regime=cfg["regime"], representation=args.state_type, roll=args.roll, probe_target = args.probe_target)
             print("=== Trained ===")
             for tn in train_t:
-                run_probe(train_z, val_z, train_t[tn], val_t[tn], tn, writer, meta, args.alpha, args.neighbours,)
+                run_probe(train_z, val_z, train_t[tn], val_t[tn], tn, writer, meta, args.alpha, args.neighbours, args.perm)
 
             if random_model is not None:
                 rz_tr, rz_val, rt_tr, rt_val = stratified_probe_split(
                     random_model, states, gravities, lengths, is_cp, regime=cfg["regime"], representation= args.state_type)
                 print("=== Random baseline ===")
                 for tn in rt_tr:
-                    run_probe(rz_tr, rz_val, rt_tr[tn], rt_val[tn], f"{tn}_random", writer, meta, args.alpha, args.neighbours)
+                    run_probe(rz_tr, rz_val, rt_tr[tn], rt_val[tn], f"{tn}_random", writer, meta, args.alpha, args.neighbours, args.perm)
 
             csv_file.flush()
         csv_file.close()
