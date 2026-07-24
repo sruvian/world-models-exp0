@@ -70,7 +70,6 @@ class ValidationSuite:
     def report(self, source_states: torch.Tensor, source_config: dict, target_config: dict, channel: int,
                probe_direction: np.ndarray, action: torch.Tensor, calibration_pool: torch.Tensor,
                target_states: torch.Tensor | None = None, n_null: int = 30):
-
         oracle_targets = []
         for i, state in enumerate(source_states):
             target_state = None if target_states is None else target_states[i]
@@ -86,7 +85,6 @@ class ValidationSuite:
         cos_sim_dz = direction_alignment(dz, probe_direction)
         cos_sim_dyzopt_probe = direction_alignment(dz_opt, probe_direction)
         
-        
         target_value = self.calibrate_target(calibration_pool, probe_direction)
         probe_result = self.direction_transport(source_states, source_config, target_config, channel,
                                                 probe_direction, target_value, action, target_states)
@@ -95,11 +93,9 @@ class ValidationSuite:
             rng = np.random.default_rng(seed)
             r = rng.standard_normal(probe_direction.shape).astype(np.float32)
             rands.append(r / np.linalg.norm(r) * np.linalg.norm(probe_direction))
-
         cosines, rels = self.checker.output_alignment(source_states, oracle_targets, action, [probe_direction] + rands)
         cos_probe, cos_rand = cosines[0], np.array(cosines[1:])
         rel_probe, rel_rand = rels[0], np.array(rels[1:])
-
         rand_tvs, null_dicts = [], []
         for r in rands:
             tv = self.calibrate_target(calibration_pool, r)

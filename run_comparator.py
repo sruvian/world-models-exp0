@@ -90,15 +90,12 @@ if __name__ == "__main__":
 
         representation = meta.get("layer", "computational")
         space = "h" if representation == "rollout_h" else "z"
-        if space == "h":
+        rolled = representation.startswith("rollout_")
+        if rolled:
             t_roll = meta.get("t_roll") or (src_s.shape[1] - 1)
             h_T, z_T = rollout_state(model, src_s, t_roll, args.device)
             source_states = src_s[:, min(t_roll, src_s.shape[1] - 1), :].float()
             actions = torch.zeros(source_states.shape[0], 1)
-
-            key = {tuple(np.round(source_states[i].numpy(), 6)): i
-                for i in range(source_states.shape[0])}
-
             src_mat = source_states.numpy()
 
             def rolled_encode(s):

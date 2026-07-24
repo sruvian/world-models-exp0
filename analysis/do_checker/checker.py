@@ -120,14 +120,14 @@ class DoChecker():
                 return self.decode(self.step(self._rejoin(bb, other), a))
 
             y = f(blk)
-            J = torch.autograd.functional.jacobian(f, blk).reshape(y.shape[-1], blk.shape[-1])
-            r = torch.as_tensor(oracle_targets[i], dtype=torch.float32) - y.squeeze(0)
+            J = torch.autograd.functional.jacobian(f, blk).reshape(y.shape[-1], blk.shape[-1]).detach()
+            r = (torch.as_tensor(oracle_targets[i], dtype=torch.float32) - y.squeeze(0)).detach()
             rn = r.norm() + 1e-9
-
-            for k, w in enumerate(ws):
-                Jw = J @ w
-                cos_acc[k].append(float((Jw @ r) / (Jw.norm() * rn + 1e-9)))
-                rel_acc[k].append(float(Jw.norm() / (w.norm() + 1e-9)))
+            with torch.no_grad():
+                for k, w in enumerate(ws):
+                    Jw = J @ w
+                    cos_acc[k].append(float((Jw @ r) / (Jw.norm() * rn + 1e-9)))
+                    rel_acc[k].append(float(Jw.norm() / (w.norm() + 1e-9)))
 
         return ([float(np.nanmean(c)) for c in cos_acc],
                 [float(np.nanmean(v)) for v in rel_acc])
