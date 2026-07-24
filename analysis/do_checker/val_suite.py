@@ -132,7 +132,6 @@ class ValidationSuite:
             "Jw_rel_norm": opt.get("Jw_rel_norm"),
             "cos_Jw_r_null_mean": float(np.nanmean(cos_rand)),
             "cos_Jw_r_null_95": float(np.nanpercentile(np.abs(cos_rand), 95)),
-            "Jw_rel_norm": rel_probe,
             "Jw_rel_null_mean": float(np.nanmean(rel_rand)),
         }
 
