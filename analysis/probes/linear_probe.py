@@ -54,7 +54,7 @@ def generate_latents_rollout(model, states: torch.Tensor,
 
         return torch.stack(outs, dim=1)
     
-def compute_mi(train_z, train_target, neighbours=5, n_sub=10000, n_perm=5, seed=0):
+def compute_mi(train_z, train_target, neighbours=5, n_sub=5000, n_perm=5, seed=0):
     rng = np.random.default_rng(seed)
     n = train_z.shape[0]
     if n > n_sub:
@@ -201,7 +201,7 @@ if __name__ == "__main__":
     ap.add_argument("--neighbours", default = 5, type = int)
     ap.add_argument("--roll", type = int, default = 1200)
     ap.add_argument("--probe_target", default = 'full')
-    ap.add_argument("--perm", default = 10, type = int)
+    ap.add_argument("--perm", default = 2, type = int)
     args = ap.parse_args()
     if args.state_type == "state":
         args.random_init = False
