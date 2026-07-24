@@ -29,8 +29,6 @@ def load_arch(csv_glob):
  
  
 def cell_means(df):
-    """Per (target_var, top_k) mean shift per patch_mode -> dissociation contrasts.
-    A 'cell' pools over config-pairs and models."""
     piv = df.pivot_table(index=["target_var", "top_k"],
                          columns="patch_mode", values="shift", aggfunc="mean")
     for m in ("real", "rand_dims", "rand_values"):
@@ -66,7 +64,7 @@ def verdict(pos, n, p):
  
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pattern", default="cross_config")
+    ap.add_argument("--pattern", default="cross_cfg")
     args = ap.parse_args()
  
     folders = sorted(glob.glob(f"{args.pattern}_*/"))
@@ -74,7 +72,8 @@ def main():
     detail = {}
  
     for fold in folders:
-        arch = Path(fold.rstrip("/")).name.split("_")[-1]
+        name = Path(fold.rstrip("/")).name
+        arch = name.removeprefix(f"{args.pattern}_")
         if arch in SEEDED:
             print(f"[skip seeded] {arch}")
             continue
