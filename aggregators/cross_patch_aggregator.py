@@ -1,16 +1,16 @@
 import argparse
 import glob
 from pathlib import Path
-
+ 
 import numpy as np
 import pandas as pd
-
+ 
 from _repr_tag import repr_of
 from scipy.stats import wilcoxon
-
+ 
 SEEDED = {"seed"}
-
-
+ 
+ 
 def load_arch(csv_glob):
     dfs = []
     for _f in glob.glob(csv_glob):
@@ -26,9 +26,11 @@ def load_arch(csv_glob):
             if c in df.columns]
     df = df.drop_duplicates(subset=keys)
     return df
-
-
+ 
+ 
 def cell_means(df):
+    """Per (target_var, top_k) mean shift per patch_mode -> dissociation contrasts.
+    A 'cell' pools over config-pairs and models."""
     piv = df.pivot_table(index=["target_var", "top_k"],
                          columns="patch_mode", values="shift", aggfunc="mean")
     for m in ("real", "rand_dims", "rand_values"):
@@ -38,8 +40,8 @@ def cell_means(df):
     piv["rv"] = piv["real"] - piv["rand_values"]
     piv["rd"] = piv["real"] - piv["rand_dims"]
     return piv
-
-
+ 
+ 
 def wilcox_safe(x):
     x = np.asarray(x, dtype=float)
     x = x[np.isfinite(x)]
@@ -50,8 +52,8 @@ def wilcox_safe(x):
         return (p, len(x))
     except ValueError:
         return (np.nan, len(x))
-
-
+ 
+ 
 def verdict(pos, n, p):
     if np.isnan(p):
         return "n/a"
@@ -60,17 +62,17 @@ def verdict(pos, n, p):
     frac = pos / n if n else float("nan")
     return (f"+ sig ({pos}/{n}, p={p:.1e})" if frac > 0.5
             else f"- sig ({pos}/{n}, p={p:.1e})")
-
-
+ 
+ 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pattern", default="cross_config")
     args = ap.parse_args()
-
+ 
     folders = sorted(glob.glob(f"{args.pattern}_*/"))
     rows = []
     detail = {}
-
+ 
     for fold in folders:
         arch = Path(fold.rstrip("/")).name.split("_")[-1]
         if arch in SEEDED:
@@ -80,18 +82,18 @@ def main():
         if df is None:
             print(f"[skip empty] {fold}")
             continue
-
+ 
         piv = cell_means(df)
         if piv is None:
             print(f"[skip malformed] {fold}")
             continue
         detail[arch] = piv
-
+ 
         rv_pos = int((piv["rv"] > 0).sum()); n = len(piv)
         rd_pos = int((piv["rd"] > 0).sum())
         rv_p, _ = wilcox_safe(piv["rv"])
         rd_p, _ = wilcox_safe(piv["rd"])
-
+ 
         rows.append({
             "arch": arch,
             "n_cells": n,
@@ -100,11 +102,11 @@ def main():
             "mean_rv": round(float(piv["rv"].mean()), 4),
             "mean_rd": round(float(piv["rd"].mean()), 4),
         })
-
+ 
     if not rows:
         print("No cross-config data found.")
         return
-
+ 
     summary = pd.DataFrame(rows).set_index("arch")
     pd.set_option("display.width", 200); pd.set_option("display.max_columns", 20)
     print("\n" + "=" * 95)
@@ -115,7 +117,7 @@ def main():
     print("  real_vs_randvals '+ sig'  -> patching real structure transports the config effect.")
     print("  real_vs_randdims '~0'/'-' -> probe dims NOT causally privileged over random dims.")
     print("  (config variables gravity/length, patched SOURCE->TARGET across configs.)")
-
+ 
     print("\n" + "=" * 95)
     print("PER-VARIABLE (mean shift by patch_mode, pooled over config-pairs & top_k)")
     print("=" * 95)
@@ -123,7 +125,7 @@ def main():
         by_var = piv.groupby(level="target_var")[["real", "rand_dims", "rand_values", "rd", "rv"]].mean()
         print(f"\n--- {arch.upper()} ---")
         print(by_var.round(4).to_string())
-
-
+ 
+ 
 if __name__ == "__main__":
     main()
