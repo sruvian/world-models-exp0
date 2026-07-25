@@ -38,7 +38,8 @@ SCALE_JUNK = {"theta_dot"}
 def load_folders(pattern, skip_seeded=True):
     out = {}
     for fold in sorted(glob.glob(f"{pattern}_*/")):
-        arch = Path(fold.rstrip("/")).name.split("_")[-1]
+        name = Path(fold.rstrip("/")).name
+        arch = name.removeprefix(f"{pattern}_")
         if skip_seeded and arch in SEEDED:
             continue
         dfs = []
