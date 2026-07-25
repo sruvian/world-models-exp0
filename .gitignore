@@ -30,7 +30,7 @@ yaml_generator.py
 analysis_dmd.py
 test_gru.py
 test_rssm.py
-linear_probes_*/
+linear_probe*/
 lin_prb_*/
 jacobian_*/
 regime_probe_*/
@@ -51,3 +51,5 @@ log*/
 induced*/
 sanity*/
 *png
+multilayer*
+test

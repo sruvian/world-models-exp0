@@ -93,9 +93,10 @@ def main():
 
     print("\n" + "=" * 90)
     print("1. DISSOCIATION")
-    print("   dz_probe_cossim ~0    = probe direction orthogonal to TRUE causal direction")
-    print("   dzopt_probe_cossim ~0 = probe direction orthogonal to OPERATOR's optimal (J+) direction")
-    print("   (the latter is the direct three-way control: the operative direction is not the probe's)")
+    print("   dz_probe_cossim ~0     = probe direction orthogonal to TRUE (nonlinear) causal direction")
+    print("   dzopt_probe_cossim ~0  = probe orthogonal to OPERATOR optimal (J+) direction")
+    print("   dzopt_pc1_probe_cos ~0 = probe orthogonal to operator's dominant correction PC")
+    print("   dzopt_top3_var         = operator correction concentration (top-3 PC var ratio)")
     print("=" * 90)
     for arch, cdf in comp.items():
         print(f"\n--- {arch.upper()} ---")
@@ -107,42 +108,53 @@ def main():
                 dz_probe_cossim=("dz_probe_cossim", "mean"),
                 dz_probe_std=("dz_probe_cossim", "std"),
                 clears_null_rate=("clears_null", "mean"),
-                pc1_probe_cos=("pc1_probe_cos", "mean"),
+                dzopt_pc1_probe_cos=("dzopt_pc1_probe_cos", "mean"),
                 n=("dz_probe_cossim", "count"),
             )
             if "dzopt_probe_cossim" in envdf.columns:
                 agg_kwargs["dzopt_probe_cossim"] = ("dzopt_probe_cossim", "mean")
                 agg_kwargs["dzopt_probe_std"] = ("dzopt_probe_cossim", "std")
+            if "dzopt_top3_var" in envdf.columns:
+                agg_kwargs["dzopt_top3_var"] = ("dzopt_top3_var", "mean")
             g = envdf.groupby("variable").agg(**agg_kwargs)
             col_order = ["dz_probe_cossim", "dz_probe_std"]
             if "dzopt_probe_cossim" in g.columns:
                 col_order += ["dzopt_probe_cossim", "dzopt_probe_std"]
-            col_order += ["clears_null_rate", "pc1_probe_cos", "n"]
+            col_order += ["clears_null_rate", "dzopt_pc1_probe_cos"]
+            if "dzopt_top3_var" in g.columns:
+                col_order += ["dzopt_top3_var"]
+            col_order += ["n"]
             g = g[[c for c in col_order if c in g.columns]]
             print(f"\n  [{env}]")
             print(g.round(4).to_string())
-
     print("\n" + "=" * 90)
-    print(f"2. THEOREM 2 VALIDATION  (well-conditioned: cond_median < {args.cond_thresh})")
-    print("   dz_opt_cossim ~0.7 = pseudoinverse matches search; ceiling_rel small = reachable")
+    print("2b. CORRECTION NORMS  ||dz_opt|| (min-norm operator) vs ||dz|| (nonlinear search)")
+    print("    small ||dz_opt|| => target reachable with a cheap latent move (low buffering);")
+    print("    expect small for dmd on gravity/length, large elsewhere.")
+    print("    gap = ||dz_opt - dz|| large => underdetermined solution set (wide null space).")
     print("=" * 90)
     for arch, cdf in comp.items():
-        wc = cdf[cdf["cond_median"] < args.cond_thresh]
-        if len(wc) == 0:
-            print(f"\n--- {arch.upper()} --- (no well-conditioned rows)")
+        need = ["dz_opt_norm", "dz_norm"]
+        if not all(c in cdf.columns for c in need):
             continue
-        g = wc.groupby(["env", "variable"]).agg(
-            dz_opt_cossim=("dz_opt_cossim", "mean"),
-            ceiling_mean=("ceiling_err", "mean"),
-            ceiling_std=("ceiling_err", "std"),
-            ceiling_median=("ceiling_err", "median"),
-            n=("dz_opt_cossim", "count"),
-        )
-        for env_v in g.index:
-            if env_v[1] in SCALE_JUNK:
-                g.loc[env_v, ["ceiling_mean", "ceiling_std", "ceiling_median"]] = np.nan
         print(f"\n--- {arch.upper()} ---")
-        print(g.round(4).to_string())
+        for env in ["pendulum", "cartpole"]:
+            envdf = cdf[cdf["env"] == env]
+            if len(envdf) == 0:
+                continue
+            g = envdf.groupby("variable").agg(
+                dz_opt_norm=("dz_opt_norm", "mean"),
+                dz_norm=("dz_norm", "mean"),
+                dy_opt_norm=("dy_opt_norm", "mean"),
+                gap=("analytical_search_gap", "mean"),
+                n=("dz_opt_norm", "count"),
+            )
+            g["gain_opt"] = g["dy_opt_norm"] / (g["dz_opt_norm"] + 1e-12)
+            print(f"\n  [{env}]")
+            print(g.round(4).to_string())
+    print("\n  gain_opt = ||J dz_opt|| / ||dz_opt|| ~ O(1) confirms J well-conditioned along")
+    print("  the correction direction (linearisation valid despite large ||dz_opt||).")
+
 
     print("\n" + "=" * 90)
     print("3. NULL-SPACE EVIDENCE  Pearson(cond_median, ceiling_rel), config vars, PER ENV")
@@ -258,6 +270,7 @@ def main():
             g = sub.groupby(["representation", "env", "variable"]).agg(
                 dz_probe=("dz_probe_cossim", "mean"),
                 dzopt_probe=("dzopt_probe_cossim", "mean"),
+                dzopt_pc1_probe=("dzopt_pc1_probe_cos", "mean"),
                 clears_null=("clears_null", "mean"),
                 n=("dz_probe_cossim", "count"),
             )
