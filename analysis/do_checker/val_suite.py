@@ -12,7 +12,7 @@ class ValidationSuite:
         self.lr = lr
 
     def optimisation_bound(self, states: torch.Tensor | np.ndarray, action: float| torch.Tensor, target: torch.Tensor | np.ndarray):
-        
+        torch.manual_seed(0)
         if isinstance(states, np.ndarray):
             states = torch.from_numpy(states)
         if isinstance(action, float):
@@ -28,7 +28,11 @@ class ValidationSuite:
         optimiser = torch.optim.Adam([d], lr=self.lr)
         for _ in range(200):
             optimiser.zero_grad()
-            pred = self.checker.decode(
+            
+            if self.checker.space == 'h':
+                pred = self.checker.decode(self.checker._rejoin(blk+d, other))
+            else:
+                pred = self.checker.decode(
                 self.checker.step(self.checker._rejoin(blk + d, other), action))
             channel_scale = target.std(dim=0) + 1e-6
             loss = ((((target - pred) / channel_scale)**2).sum()
@@ -105,6 +109,8 @@ class ValidationSuite:
                 r, tv, action, target_states))
         null = null_summary(null_dicts)
         probe_slope = probe_result["slope"]
+        pca_dz = pca_operator(dz, probe_direction)
+        pca_dz_opt = pca_operator(dz_opt, probe_direction)
         return {
 
             "ceiling_err": float(final_error),
@@ -112,16 +118,19 @@ class ValidationSuite:
             "analytical_search_gap": float((dz_opt - dz).detach().norm()),
             "dz_opt_cossim": cos_sim_dyzopt_dz,
             "dy_opt_norm": float(dy_opt.detach().norm()),
+            "dz_opt_norm": float(dz_opt.detach().norm()),
+            "dz_norm": float(dz.detach().norm()),
 
             "dz_probe_cossim": cos_sim_dz,
             "dzopt_probe_cossim": cos_sim_dyzopt_probe,
+            "dzopt_pc1_probe_cos": pca_dz_opt["pc1_probe_cos"],
+            "dzopt_top3_var": pca_dz_opt["top3_var"],
             "probe_slope": probe_slope,
             "probe_survival": probe_result["survival"],
             **null,
             "clears_null": bool(probe_slope > null["null_95"]),
             "probe_target_value": float(target_value),
             "null_target_mean": float(np.nanmean(rand_tvs)),
-            **pca_operator(dz, probe_direction),
             "probe_result": probe_result,
             "null_dicts": null_dicts,
             "cos_Jw_r": float(cos_probe),

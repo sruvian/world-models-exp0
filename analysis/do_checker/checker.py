@@ -115,9 +115,12 @@ class DoChecker():
             blk, other = self._pick(enc)
             blk = blk.detach().requires_grad_(True)
             a = action[i:i+1]
-
-            def f(bb):
-                return self.decode(self.step(self._rejoin(bb, other), a))
+            if self.space=='h':
+                def f(bb):
+                    return self.decode(self._rejoin(bb, other))
+            else:
+                def f(bb):
+                    return self.decode(self.step(self._rejoin(bb, other), a))                    
 
             y = f(blk)
             J = torch.autograd.functional.jacobian(f, blk).reshape(y.shape[-1], blk.shape[-1]).detach()

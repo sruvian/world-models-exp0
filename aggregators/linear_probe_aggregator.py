@@ -85,7 +85,8 @@ def main():
 
     per_arch = {}
     for fold in sorted(glob.glob(f"{args.pattern}_*/")):
-        arch = Path(fold.rstrip("/")).name.split("_")[-1]
+        name = Path(fold.rstrip("/")).name
+        arch = name.removeprefix(f"{args.pattern}_")
         if arch in SEEDED:
             print(f"[skip seeded] {arch}")
             continue

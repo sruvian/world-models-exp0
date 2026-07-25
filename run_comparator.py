@@ -144,11 +144,14 @@ if __name__ == "__main__":
             w = csv.writer(fh)
             if hdr:
                 w.writerow(["checkpoint","variable","latent_dim","k","regime",
-                            "ceiling_err","dz_opt_cossim","analytical_search_gap","dy_opt_norm",
-                            "dz_probe_cossim","dzopt_probe_cossim","survival","probe_slope","clears_null",
+                            "ceiling_err","dz_opt_cossim","analytical_search_gap",
+                            "dy_opt_norm","dz_opt_norm","dz_norm",
+                            "dz_probe_cossim","dzopt_probe_cossim",
+                            "dzopt_pc1_probe_cos","dzopt_top3_var",
+                            "survival","probe_slope","clears_null",
                             "null_95","null_mean","null_max","null_nonnan",
                             "probe_target_value","null_target_mean",
-                            "pc1_var","pc1_probe_cos", "cos_Jw_r", "Jw_rel_norm",
+                            "cos_Jw_r","Jw_rel_norm",
                             "cos_Jw_r_null_mean",
                             "cos_Jw_r_null_95",
                             "Jw_rel_null_mean",
@@ -158,15 +161,16 @@ if __name__ == "__main__":
         w.writerow([
             meta["checkpoint"], variable, cfg["latent"], cfg["k"], cfg["regime"],
             result["ceiling_err"], result["dz_opt_cossim"], result.get("analytical_search_gap"),
-            result["dy_opt_norm"], result["dz_probe_cossim"], result["dzopt_probe_cossim"],
+            result["dy_opt_norm"], result.get("dz_opt_norm"), result.get("dz_norm"),
+            result["dz_probe_cossim"], result["dzopt_probe_cossim"],
+            result.get("dzopt_pc1_probe_cos"), result.get("dzopt_top3_var"),
             result["probe_survival"], result["probe_slope"], result["clears_null"],
             result["null_95"], result.get("null_mean"), result.get("null_max"), result.get("null_nonnan"),
             result.get("probe_target_value"), result.get("null_target_mean"),
-            result.get("pc1_var"), result.get("pc1_probe_cos"),result.get('cos_Jw_r'), result.get('Jw_rel_norm'),
+            result.get('cos_Jw_r'), result.get('Jw_rel_norm'),
             result.get("cos_Jw_r_null_mean"),
             result.get("cos_Jw_r_null_95"),
             result.get("Jw_rel_null_mean"),
-            
         ])
         fh.flush()
         print(f"[{meta['checkpoint']}] {variable}: ceiling={result['ceiling_err']:.4f} "
