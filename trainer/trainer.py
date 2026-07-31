@@ -112,7 +112,9 @@ def trainer(
         rollout_decay: str,
         gamma: float,
         log_interval: int,
-        beta: float = 1.0
+        beta: float = 1.0,
+        reg: bool = False,
+        lam: float = 1.0,
 )-> WorldModel| ProtocolAModel| ProtocolBModel| WorldModelVAE| WorldModelGRU| WorldModelDMD| WorldModelRSSM:
     
     rollout_func = partial(lin_dec, gamma=gamma) if rollout_decay == "Linear" else partial(exp_dec, gamma=gamma)
@@ -131,7 +133,7 @@ def trainer(
         if isinstance(model, WorldModelVAE):
             total_loss = rollout_loss_vae(model, c_train_s, c_train_a, c_train_n_s, loss_func, rollout_func, device = train_states.device, beta = beta)
         elif isinstance(model, WorldModelDMD):
-            total_loss = rollout_loss_dmd(model, c_train_s, c_train_a, c_train_n_s, loss_func, rollout_func, device = train_states.device)
+            total_loss = rollout_loss_dmd(model, c_train_s, c_train_a, c_train_n_s, loss_func, rollout_func, device = train_states.device, reg= reg, lam = lam)
         elif isinstance(model, WorldModelGRU):
             total_loss = rollout_loss_gru(model, c_train_s, c_train_a, c_train_n_s, loss_func, rollout_func, device = train_states.device)
         elif isinstance(model, WorldModelRSSM):
@@ -151,7 +153,7 @@ def trainer(
                 if isinstance(model, WorldModelVAE):
                     val_loss = rollout_loss_vae_val(model, val_states[val_idx], val_actions[val_idx], val_next_states[val_idx], loss_func, rollout_func, device = train_states.device, beta = beta)
                 elif isinstance(model, WorldModelDMD):
-                    val_loss = rollout_loss_dmd(model, val_states[val_idx], val_actions[val_idx], val_next_states[val_idx], loss_func, rollout_func, device = train_states.device)
+                    val_loss = rollout_loss_dmd(model, val_states[val_idx], val_actions[val_idx], val_next_states[val_idx], loss_func, rollout_func, device = train_states.device, reg = reg, lam=lam)
                 elif isinstance(model, WorldModelGRU):
                     val_loss = rollout_loss_gru(model, val_states[val_idx], val_actions[val_idx], val_next_states[val_idx], loss_func, rollout_func, device = train_states.device)
                 elif isinstance(model, WorldModelRSSM):
@@ -160,7 +162,7 @@ def trainer(
                     val_loss = rollout_loss(model, val_states[val_idx], val_actions[val_idx], val_next_states[val_idx], loss_func, rollout_func, device = train_states.device)
             model.train()
             logger.log(running_loss / log_interval, val_loss.item(), step)
-            pbar.set_postfix(train_loss=running_loss/log_interval, val_loss=val_loss.item())
+            pbar.set_postfix(train_loss=running_loss/log_interval)
             running_loss = 0            
 
     return model
@@ -179,8 +181,10 @@ def rollout_loss(model: WorldModel | ProtocolAModel| ProtocolBModel, states: tor
         total_loss += weight * loss_func(s_hat, next_states[:, k, :])
     return total_loss
 
-def rollout_loss_dmd(model: WorldModelDMD, states: torch.Tensor, actions: torch.Tensor, next_states: torch.Tensor,
-                  loss_func: torch.nn.Module, rollout_func: Callable, device: torch.device, lam: float = 1.0):
+def rollout_loss_dmd(model: WorldModelDMD, states: torch.Tensor, actions: torch.Tensor,
+                     next_states: torch.Tensor, loss_func: torch.nn.Module,
+                     rollout_func: Callable, device: torch.device,
+                     lam: float = 1.0, reg: bool = False):
     K = states.shape[1]
     z = model.encode(states[:, 0, :])
     total_loss = torch.zeros(1, device=device)
@@ -190,9 +194,13 @@ def rollout_loss_dmd(model: WorldModelDMD, states: torch.Tensor, actions: torch.
         s_hat = model.decode(z)
         weight = rollout_func(K, k)
         total_loss += weight * loss_func(s_hat, next_states[:, k, :])
-    sigma_max = torch.linalg.matrix_norm(model.transition.A.weight, ord=2)
-    reg = lam * torch.relu(sigma_max - 1.0) ** 2
-    return total_loss + reg
+
+    penalty = torch.zeros(1, device=device)
+    if reg:
+        sigma_max = torch.linalg.matrix_norm(model.transition.A.weight, ord=2)
+        penalty = lam * torch.relu(sigma_max - 1.0) ** 2
+
+    return total_loss + penalty
 
 def rollout_loss_vae(model: WorldModelVAE, states: torch.Tensor, actions: torch.Tensor, next_states: torch.Tensor, 
                      loss_func: torch.nn.Module, rollout_func, beta, device):

@@ -104,7 +104,8 @@ if __name__=="__main__":
                 env_config["gravity"], env_config.get("length", 0.0), model_config["latent_dim"], hyperparams_config["beta"])
         logger.start()
         trained_model = trainer(train_s, train_s_next, train_a, val_s, val_s_next, val_a, model, logger, optimizer, loss_func, trainer_config["batch_size"], trainer_config["steps"],
-                                hyperparams_config["rollout_decay"], hyperparams_config["gamma"], trainer_config["log_interval"], hyperparams_config["beta"])
+                                hyperparams_config["rollout_decay"], hyperparams_config["gamma"], trainer_config["log_interval"],
+                                hyperparams_config["beta"], hyperparams_config['reg'], hyperparams_config['lam'])
         logger.finish()
         base_dir = os.path.dirname(os.path.abspath(__file__))
         base_dir = os.path.join(base_dir, yaml_out['checkpointing']['logbase_dir'])
@@ -123,6 +124,11 @@ if __name__=="__main__":
             f"log_{model_config['name']}_{seed}_{config_tag}"
             f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
             f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}_beta{hyperparams_config['beta']}.npz")
+        elif hyperparams_config['reg'] == True:
+            log_path = os.path.join(log_dir, 
+            f"log_{model_config['name']}_{seed}_{config_tag}"
+            f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
+            f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}_reg{hyperparams_config['lam']}.npz")
         else:
             log_path = os.path.join(log_dir, 
                 f"log_{model_config['name']}_{seed}_{config_tag}"
@@ -147,7 +153,13 @@ if __name__=="__main__":
                     f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
                     f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}_beta{hyperparams_config['beta']}.pt"
                 )
-            
+            elif hyperparams_config['reg'] == True:
+                checkpoint_path = os.path.join(
+                    model_save_path,
+                    f"model_{model_config['name']}_{seed}_{config_tag}"
+                    f"_k{hyperparams_config['rollout_steps']}_{hyperparams_config['rollout_decay']}"
+                    f"_steps{trainer_config['steps']}_latent{model_config['latent_dim']}_reg{hyperparams_config['lam']}.pt"
+                )
             else:
                 checkpoint_path = os.path.join(
                 model_save_path,

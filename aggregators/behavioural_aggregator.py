@@ -26,7 +26,6 @@ def load_arch(csv_glob):
 
 
 def fit_line(true, meas):
-    """slope, intercept, pearson r of measured vs true."""
     if len(true) < 3 or np.std(true) < 1e-9:
         return np.nan, np.nan, np.nan
     slope, intercept = np.polyfit(true, meas, 1)
@@ -37,7 +36,7 @@ def fit_line(true, meas):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pattern", default="behavioural")
-    ap.add_argument("--min_r2", type=float, default=0.3,
+    ap.add_argument("--min_r2", type=float, default=0.0,
                     help="drop per-config estimates with fit R2 below this (unreliable)")
     args = ap.parse_args()
 
@@ -45,7 +44,7 @@ def main():
     arch_dfs = {}
     for fold in folders:
         arch = Path(fold.rstrip("/")).name.split("_")[-1]
-        if arch in SEEDED:
+        if "seed" in arch:
             continue
         df = load_arch(f"{fold}/*.csv")
         if df is not None:

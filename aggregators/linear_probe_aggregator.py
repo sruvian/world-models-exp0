@@ -87,7 +87,7 @@ def main():
     for fold in sorted(glob.glob(f"{args.pattern}_*/")):
         name = Path(fold.rstrip("/")).name
         arch = name.removeprefix(f"{args.pattern}_")
-        if arch in SEEDED:
+        if "seed" in arch:
             print(f"[skip seeded] {arch}")
             continue
         df = load_arch(f"{fold}/*.csv")

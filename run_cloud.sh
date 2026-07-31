@@ -2,9 +2,9 @@
 
 set -u
 
-LOG_DIR="logs_rssm"
-YAML_DIR="rssm_generated"
-CKPT_DIR="model_saves_rssm"
+LOG_DIR="logs_mlp"
+YAML_DIR="mlp_generated"
+CKPT_DIR="model_saves_mlp"
 
 mkdir -p "$LOG_DIR"
 

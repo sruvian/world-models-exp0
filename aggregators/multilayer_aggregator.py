@@ -42,6 +42,8 @@ def main():
     arch_dfs = {}
     for fold in folders:
         arch = Path(fold.rstrip("/")).name.split("_")[-1]
+        if "seed" in arch:
+            continue
         df = load_arch(f"{fold}/*.csv")
         if df is not None:
             arch_dfs.setdefault(arch, []).append(df)
