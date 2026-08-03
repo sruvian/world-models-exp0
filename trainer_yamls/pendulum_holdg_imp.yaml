@@ -1,13 +1,13 @@
 # Environment
 environment:
  name: "PendulumSim"
- gravity: 5.0
+ gravity: 9.8
  mass1: 1.0
- length: 2.0
+ length: 0.0
  dt: 0.01
  max_action: 10.0
  damping: 0.0
- seed: 43
+ seed: 42
 
 # Data Collection Parameters
 collector:
@@ -16,21 +16,22 @@ collector:
   policy_seed: 35
   save: false
   impulse_policy: true
-  
+
 datasets:
   use_existing: true
+  regime: "holdg"
   paths:
-    - "datasets/impulse_policy/v0_PendulumSim_*gravity5.00*length2.0*.npz"
+    - "datasets/impulse_policy/v0_PendulumSim_*gra*9.8*.npz"
 
 # Model Parameterrs
 model:
-  seed: 100
+  seed: 0
   run_model: true
-  name: WorldModel
+  name: "WorldModelRSSM"
   state_dim: 3
   action_dim: 1
   hidden_dim: 64
-  latent_dim: 64
+  latent_dim: 8
 
 # Training and Testing Parameters
 trainer:
@@ -48,19 +49,23 @@ rollout_engine:
 
 # Hyperparameters
 hyperparams:
+  lam: 1.0
+  reg: false
   optimizer: Adam
   loss: MSE
   lr: 0.001
   rollout_decay: "Linear"
   gamma: 0.9
-  rollout_steps: 15
+  rollout_steps: 50
+  beta: 0.1
   
 
 checkpointing:
   save: true
-  save_path: "model_saves/"
+  save_path: "model_saves_rssm"
   load: False
   load_path: null
+  logbase_dir: "logfiles_rssm"
 
 settings:
   device: "cpu"
