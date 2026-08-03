@@ -131,17 +131,8 @@ def main():
     print("CROSS-CONFIG INTERCHANGE — three-way dissociation (config variables across configs)")
     print("=" * 95)
     print(summary.to_string())
-    print("\nReading:")
-    print("  real_vs_randvals '+ sig'  -> patching real structure transports the config effect.")
-    print("  real_vs_randdims '~0'/'-' -> probe dims NOT causally privileged over random dims.")
-    print("  (config variables gravity/length, patched SOURCE->TARGET across configs.)")
-
     print("\n" + "=" * 95)
     print("NON-LOCALISATION BY PATCHED FRACTION  (top_k / latent_dim)")
-    print("  rd = real - rand_dims;  rd ~ 0 => probe dims NOT privileged over random dims.")
-    print("  The load-bearing cell is the SMALLEST fraction (large d, small k): if rd~0")
-    print("  there, non-localisation holds even when few dims are patched (strong claim,")
-    print("  matches the wide-latent regime of single-direction-steering studies).")
     print("=" * 95)
     for arch, df in raw_dfs.items():
         pf = cell_means(df, by_fraction=True)

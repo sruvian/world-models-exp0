@@ -40,8 +40,6 @@ def main():
 
     print("=" * 88)
     print("INDUCED-DIRECTION DISSOCIATION   cos( w_probe , J_E S_x v )   (oracle-free)")
-    print("  parameters -> ~0 (probe direction unrelated to where the parameter moves the latent)")
-    print("  theta_dot  -> high (probe aligns with the induced state-perturbation direction)")
     print("=" * 88)
 
     for arch, df in arch_dfs.items():
@@ -89,16 +87,6 @@ def main():
                 ratio = a.mean() / chance
                 print(f"      {var:8s}: |cos|={a.mean():.4f} ({ratio:.2f}x chance)  "
                       f"-> {'ABOVE chance (control OK)' if a.mean() > chance else 'FAILED control'} (n={len(a)})")
-
-    print("\nReading: for parameters, |cos| is reported as a MULTIPLE of the random-direction")
-    print("baseline sqrt(2/pi d). Below 1x means the probe direction is LESS aligned with the")
-    print("induced parameter direction than a random vector -- it carries no information about")
-    print("where the parameter moves the latent (and the consistent negative signed mean shows")
-    print("a mild anti-alignment). theta_dot sits ABOVE chance: the positive control confirms")
-    print("the test has power -- when a variable IS coordinate-encoded, the probe finds its")
-    print("induced direction. Uses only the simulator (S_x) and encoder (J_E): no oracle, no search.")
-    print("Cartpole: g,l are FULL-RANK identifiable there, yet parameters still sit below chance --")
-    print("so the null is NOT explained by non-identifiability (separates the two failure modes).")
 
 
 if __name__ == "__main__":

@@ -40,7 +40,6 @@ def jac_condition_per_checkpoint(jac_df):
     d = jac_df
     if "is_ood" in d.columns:
         d = d[d["is_ood"] == False]
-    # jacobian 'checkpoint' column is the bare .pt name
     med = d.groupby("checkpoint")["condition_number"].median()
     iqr = d.groupby("checkpoint")["condition_number"].agg(
         lambda x: x.quantile(0.75) - x.quantile(0.25))
@@ -75,9 +74,7 @@ def main():
 
     print("\n" + "=" * 90)
     print("1. DISSOCIATION")
-    print("   dz_probe_cossim ~0    = probe direction orthogonal to TRUE causal direction")
-    print("   dzopt_probe_cossim ~0 = probe direction orthogonal to OPERATOR's optimal (J+) direction")
-    print("   (the latter is the direct three-way control: the operative direction is not the probe's)")
+
     print("=" * 90)
     for arch, cdf in comp.items():
         print(f"\n--- {arch.upper()} ---")
@@ -108,7 +105,6 @@ def main():
             print(g.round(4).to_string())
     print("\n" + "=" * 90)
     print(f"2. THEOREM 2 VALIDATION  (well-conditioned: cond_median < {args.cond_thresh})")
-    print("   dz_opt_cossim ~0.7 = pseudoinverse matches search; ceiling_rel small = reachable")
     print("=" * 90)
     for arch, cdf in comp.items():
         wc = cdf[cdf["cond_median"] < args.cond_thresh]
@@ -131,9 +127,7 @@ def main():
 
     print("\n" + "=" * 90)
     print("3. NULL-SPACE EVIDENCE  Pearson(cond_median, ceiling_rel), config vars, PER ENV")
-    print("   positive r => rank-deficiency (high cond) predicts unreachability (high ceiling)")
-    print("   NOTE: split by env because ceiling is env-dominated (cartpole >> pendulum);")
-    print("   pooling envs induces a spurious between-env correlation. Test WITHIN env.")
+
     print("=" * 90)
     for env in ["pendulum", "cartpole"]:
         print(f"\n  --- {env} ---")
@@ -156,7 +150,6 @@ def main():
 
     print("\n" + "=" * 90)
     print("4. DISSOCIATION SIGNIFICANCE  (one-sample test vs 0)")
-    print("   want: NOT significantly positive (probe not aligned with the causal/operator direction)")
     print("=" * 90)
     cos_cols = ["dz_probe_cossim"]
     if any("dzopt_probe_cossim" in cdf.columns for cdf in comp.values()):
@@ -183,18 +176,11 @@ def main():
                     print(f"    {arch:6s} [{env:8s}][{scope:6s}]: mean={x.mean():+.4f}  "
                           f"t={t:+.2f} p={p:.3f}  -> {verdict}  (n={len(x)})")
 
-    print("\nCore claim (robust): dz_probe_cossim ~0 AND dzopt_probe_cossim ~0 for parameters")
-    print("=> neither the true causal direction nor the operator's own optimal direction")
-    print("   aligns with the probe direction. Theorem 2: dz_opt_cossim ~0.5-0.7 (J+ valid).")
-    print("Ceiling: check PENDULUM (small=reachable) vs CARTPOLE (high=degenerate J).")
-    print("Null-space->ceiling correlation: only credible WITHIN env (section 3);")
-    print("a pooled-env correlation is confounded by env and should not be reported.")
+
 
     if any("cos_Jw_r" in cdf.columns for cdf in comp.values()):
         print("\n" + "=" * 90)
         print("4b. OUTPUT-SPACE ALIGNMENT  cos(J w_probe, r)  vs norm-matched random null")
-        print("    probe ~ null  =>  the probe direction's OUTPUT effect is no better")
-        print("    aimed at the residual than a random direction of the same norm.")
         print("=" * 90)
         for arch, cdf in comp.items():
             if "cos_Jw_r" not in cdf.columns:
@@ -220,46 +206,12 @@ def main():
                     g["rel_ratio"] = g["Jw_rel"] / (g["Jw_rel_null"] + 1e-12)
                 print(f"\n  [{env}]")
                 print(g.round(4).to_string())
-        print("\n  Reading: for parameters expect |cos_Jw_r| <= null_95 (no better than a")
-        print("  random direction at producing the required output change). This is the")
-        print("  preimage-free version of the dissociation -- it lives entirely in output")
-        print("  space, so it does not depend on choosing J+ out of the solution set.")
-
-    reps = sorted({r for cdf in comp.values() for r in cdf.get("representation", pd.Series(dtype=str)).unique()})
-    if len(reps) > 1:
-        print("\n" + "=" * 90)
-        print("4c. BY REPRESENTATION  (instantaneous vs rollout_h vs rollout_z)")
-        print("    rollout_full is EXCLUDED from causal analysis: h and z are different")
-        print("    spaces (deterministic recurrent state vs stochastic per-step encoding),")
-        print("    so a cosine in the concatenation is dominated by the larger-norm block.")
-        print("=" * 90)
-        for arch, cdf in comp.items():
-            if "representation" not in cdf.columns or cdf["representation"].nunique() < 2:
-                continue
-            print(f"\n--- {arch.upper()} ---")
-            sub = cdf[cdf["variable"].isin(CONFIG_VARS)]
-            if len(sub) == 0:
-                continue
-            g = sub.groupby(["representation", "env", "variable"]).agg(
-                dz_probe=("dz_probe_cossim", "mean"),
-                dzopt_probe=("dzopt_probe_cossim", "mean"),
-                clears_null=("clears_null", "mean"),
-                n=("dz_probe_cossim", "count"),
-            )
-            if "cos_Jw_r" in sub.columns:
-                g2 = sub.groupby(["representation", "env", "variable"])["cos_Jw_r"].mean()
-                g["cos_Jw_r"] = g2
-            print(g.round(4).to_string())
 
     geom_cols = ["probe_slope", "survival", "dz_opt_norm", "dz_norm",
                  "dzopt_top3_var", "analytical_search_gap"]
     if any(c in cdf.columns for cdf in comp.values() for c in geom_cols):
         print("\n" + "=" * 90)
         print("4d. TRANSPORT & OPERATOR GEOMETRY  (config variables)")
-        print("    survival    = fraction of points the probe direction transported (higher=more)")
-        print("    dz_opt_norm vs dz_norm = pinv (exact, min-norm) vs Adam (implicitly reg.)")
-        print("    dzopt_top3_var = variance concentration of dz_opt in its top-3 PCs")
-        print("    analytical_search_gap = ||dz_opt - dz|| (latent-space distance)")
         print("=" * 90)
         for arch, cdf in comp.items():
             sub = cdf[cdf["variable"].isin(CONFIG_VARS)]
@@ -282,10 +234,7 @@ def main():
                 g = edf.groupby("variable").agg(**agg)
                 print(f"\n  [{env}]")
                 print(g.round(4).to_string())
-        print("\n  Reading: dz_opt_norm > dz_norm is expected (pinv solves exact residual")
-        print("  cancellation, no norm penalty; Adam stops when the whitened loss flattens).")
-        print("  survival low for parameters = the probe direction transports little of the")
-        print("  config effect -- corroborates the cosine dissociation from the transport side.")
+
     SUPP_ROWS = ["gravity", "length", "theta_dot"]
     supp_map = [
         ("asearch_gap", "analytical_search_gap", "mean"),
@@ -324,19 +273,11 @@ def main():
                 g["Jw_rel_ratio"] = (g["Jw_rel"] / (g["Jw_rel_null"] + 1e-12)).round(3)
             print(f"\n  [{env}]")
             print(g.round(4).to_string())
-    print("\n  Reading (config rows vs the theta_dot control):")
-    print("   - survival / clears_null LOW for params, higher for theta_dot -> probe")
-    print("     direction transports the state variable but not the config parameter.")
-    print("   - |cos_Jw_r| <= null95 for params (Jw_beats_null False), > null for theta_dot.")
-    print("   - dz_opt_norm > dz_norm throughout (pinv exact min-norm vs Adam approx).")
-
     diag_cols = ["probe_target_value", "null_target_mean", "null_nonnan", "null_95"]
     have_diag = any(all(c in cdf.columns for c in diag_cols) for cdf in comp.values())
     if have_diag:
         print("\n" + "=" * 90)
         print("5. NULL CALIBRATION  (does clears_null compare like-for-like targets?)")
-        print("   target_ratio = probe_target_value / null_target_mean  (~1 = comparable)")
-        print("   null_nonnan  = surviving null seeds per row (want ~30)")
         print("=" * 90)
         for arch, cdf in comp.items():
             if not all(c in cdf.columns for c in diag_cols):
@@ -358,10 +299,6 @@ def main():
                        "null_nonnan", "clears_null", "n"]]
                 print(f"\n  [{env}]")
                 print(g.round(4).to_string())
-        print("\n  Reading: if target_ratio ~1 and null_nonnan ~30, clears_null is a")
-        print("  like-for-like comparison and the slope story is clean. If probe targets")
-        print("  are systematically smaller (ratio << 1), report cosines + clears_null RATE")
-        print("  (calibration-free) and move slope magnitudes to an appendix note.")
 
 
 if __name__ == "__main__":

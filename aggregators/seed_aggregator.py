@@ -58,7 +58,6 @@ def kofn(series, predicate):
 def agg_probe(data):
     print("=" * 96)
     print("SEED STABILITY — LINEAR PROBES  (seeds 1-5)")
-    print(f"  parameter 'at floor' = R2 < {FLOOR_R2}. Want floor in ALL seeds.")
     print("=" * 96)
     for (arch, rep), df in data.items():
         df = df[~df["target"].astype(str).str.endswith("_random")]
@@ -84,7 +83,6 @@ def agg_probe(data):
 
 
 def _cell_rd(df, by_seed=True):
-    """real - rand_dims per cell; cells keyed by (seed?, target_var, top_k)."""
     idx = (["seed"] if by_seed else []) + ["target_var", "top_k"]
     piv = df.pivot_table(index=idx, columns="patch_mode", values="shift", aggfunc="mean")
     for m in ("real", "rand_dims", "rand_values"):
@@ -99,8 +97,6 @@ def _cell_rd(df, by_seed=True):
 def agg_patch(data, envs=("pendulum",), label="WITHIN-CONFIG"):
     print("=" * 96)
     print(f"SEED STABILITY — {label} PATCHING  (seeds 1-5)")
-    print("  rd = real - rand_dims. Parameter non-localisation = rd n.s./negative per seed.")
-    print("  Want: parameter rd NOT positive in each seed; state rd positive (power) in each.")
     if len(envs) > 1:
         print("  Envs reported separately: cartpole has the [:, :2] under-measurement caveat")
         print("  on real-dims transport, so it is NOT pooled with pendulum.")
@@ -155,10 +151,6 @@ def agg_patch(data, envs=("pendulum",), label="WITHIN-CONFIG"):
 def agg_comparator(data):
     print("=" * 96)
     print("SEED STABILITY — COMPARATOR  (seeds 1-5)")
-    print("  [param] gravity/length: cosines ~0, cos_Jw_r within null. Want in ALL seeds.")
-    print("  [theta_dot CTRL] power control: cosines ABOVE, cos_Jw_r EXCEEDS null -- proves")
-    print("  the test has power (a decodable state var DOES align with the operator direction).")
-    print("  If theta_dot were also ~0, the parameter nulls would be uninformative.")
     print("=" * 96)
     CFG = ["gravity", "length"]
     CTRL = "theta_dot"
@@ -206,11 +198,6 @@ def agg_comparator(data):
 def agg_behavioural(data):
     print("=" * 96)
     print("SEED STABILITY — BEHAVIOURAL g/l TRACKING  (seeds 1-5)")
-    print("  The load-bearing POSITIVE result: effective g/l tracks true g/l (slope ~1).")
-    print("  Positive claims are where seed-fragility bites -- tight slope across seeds")
-    print("  is what rebuts 'you found one lucky initialisation'.")
-    print("  Watch RSSM: if slope is consistently ~0.67 (vs MLP ~1.0), the compression")
-    print("  is architectural, not an initialisation accident -> reportable finding.")
     print("=" * 96)
     for (arch, rep), df_full in data.items():
         base = df_full[df_full["env"] == "pendulum"] if "env" in df_full.columns else df_full
@@ -249,8 +236,6 @@ def agg_behavioural(data):
 def agg_induced(data):
     print("=" * 96)
     print("SEED STABILITY — INDUCED DIRECTION  cos(w_probe, J_E S_x v)  (seeds 1-5)")
-    print("  Oracle-free: parameters should sit BELOW chance |cos| = sqrt(2/pi d) in every")
-    print("  seed; theta_dot (state control) ABOVE chance. Reported as ratio-to-chance.")
     print("=" * 96)
     for (arch, rep), df_full in data.items():
         for gtag, df in split_groups(df_full, by_env=True, by_policy=True):
@@ -299,11 +284,6 @@ def split_groups(df, by_env=True, by_policy=True):
 def agg_multilayer(data):
     print("=" * 96)
     print("SEED STABILITY — MULTILAYER PROBES  (seeds 1-5)")
-    print("  Probe R2 per network layer. Parameter 'at floor' if training gain (above")
-    print(f"  baseline) < {FLOOR_R2} AND R2 < {2*FLOOR_R2}. Want floor at EVERY layer in ALL seeds:")
-    print("  the parameter is not linearly present anywhere in the network, not just the")
-    print("  final latent. State variables (theta_dot, x) should be high at every layer.")
-    print("  Generic over architectures: layers come from the CSV, not hardcoded.")
     print("=" * 96)
     R2 = "r2_mean"
     GAIN = "above_baseline"
@@ -366,7 +346,7 @@ def agg_multilayer(data):
                         all_floored = False
             verdict = "YES" if all_floored else "NO (some layer/seed clears floor)"
             print(f"  => parameters floored at EVERY layer in EVERY seed: {verdict}  "
-                  f"({n_checks} layer×param checks)")
+                  f"({n_checks} layer x param checks)")
 
 
 def main():

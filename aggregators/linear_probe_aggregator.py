@@ -76,7 +76,7 @@ def summarize(df, random_rows=False, representation=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pattern", default="linear_probes")
+    ap.add_argument("--pattern", default="linear_probe")
     ap.add_argument("--floor_thresh", type=float, default=0.05,
                     help="training gain below this = not learned")
     ap.add_argument("--by_regime", action="store_true",
@@ -159,14 +159,10 @@ def main():
         gain_tab = gain_tab.reindex(present + [v for v in gain_tab.index if v not in VAR_ORDER])
         print("\n" + "=" * 92)
         print("CROSS-ARCHITECTURE  TRAINING GAIN  (r2_trained - r2_random)")
-        print("  This is the claim-bearing number, not delta: delta only rules out label")
-        print("  leakage; training gain rules out 'random features already encode it'.")
         print("=" * 92)
         print(gain_tab.round(3).to_string())
 
-        print("\n" + "=" * 92)
-        print(f"VERDICT  (training gain < {args.floor_thresh} => NOT a learned representation)")
-        print("=" * 92)
+
         for v in PARAM_VARS:
             if v not in gain_tab.index:
                 continue
@@ -182,36 +178,31 @@ def main():
             row = gain_tab.loc[v]
             status = ", ".join(f"{a}:{row[a]:+.2f}" for a in row.index if np.isfinite(row[a]))
             print(f"  {v:14s} {status}")
-        print("\n  NOTE: state variables often show SMALL training gain because random")
-        print("  overcomplete ReLU features already encode observable state linearly.")
-        print("  The dissociation to report is therefore: state recoverable from BOTH")
-        print("  trained and random; parameters recoverable from NEITHER.")
 
-    reps_present = sorted({r for d in per_arch.values() for r in d["representation"].unique()})
-    if len(reps_present) > 1:
-        print("\n" + "=" * 92)
-        print("REPRESENTATION COMPARISON  (instantaneous vs rollout_z vs rollout_h)")
-        print("  z / instantaneous low + h high  =>  parameter is TEMPORAL, not stored per-frame")
-        print("=" * 92)
-        for arch, df in per_arch.items():
-            avail = [r for r in ["instantaneous", "rollout_z", "rollout_h", "rollout_full"]
-                     if r in set(df["representation"])]
-            if len(avail) < 2:
-                continue
-            print(f"\n--- {arch.upper()} ---")
-            cols = {}
-            for rep in avail:
-                t = summarize(df, random_rows=False, representation=rep)
-                if t is None:
-                    continue
-                cols[f"{rep}_r2"] = t["r2"]
-                rn = summarize(df, random_rows=True, representation=rep)
-                if rn is not None:
-                    cols[f"{rep}_gain"] = t["r2"] - rn["r2"]
-            tab = pd.DataFrame(cols)
-            present_v = [v for v in VAR_ORDER if v in tab.index]
-            tab = tab.reindex(present_v + [v for v in tab.index if v not in VAR_ORDER])
-            print(tab.round(3).to_string())
+    # reps_present = sorted({r for d in per_arch.values() for r in d["representation"].unique()})
+    # if len(reps_present) > 1:
+    #     print("\n" + "=" * 92)
+    #     print("REPRESENTATION COMPARISON  (instantaneous vs rollout_z vs rollout_h)")
+    #     print("=" * 92)
+    #     for arch, df in per_arch.items():
+    #         avail = [r for r in ["instantaneous", "rollout_z", "rollout_h", "rollout_full"]
+    #                  if r in set(df["representation"])]
+    #         if len(avail) < 2:
+    #             continue
+    #         print(f"\n--- {arch.upper()} ---")
+    #         cols = {}
+    #         for rep in avail:
+    #             t = summarize(df, random_rows=False, representation=rep)
+    #             if t is None:
+    #                 continue
+    #             cols[f"{rep}_r2"] = t["r2"]
+    #             rn = summarize(df, random_rows=True, representation=rep)
+    #             if rn is not None:
+    #                 cols[f"{rep}_gain"] = t["r2"] - rn["r2"]
+    #         tab = pd.DataFrame(cols)
+    #         present_v = [v for v in VAR_ORDER if v in tab.index]
+    #         tab = tab.reindex(present_v + [v for v in tab.index if v not in VAR_ORDER])
+    #         print(tab.round(3).to_string())
 
     if args.by_regime:
         print("\n" + "=" * 92)

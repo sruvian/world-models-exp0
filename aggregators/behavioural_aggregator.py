@@ -95,7 +95,6 @@ def main():
 
     print("\n" + "=" * 85)
     print("CROSS-ARCHITECTURE  —  PENDULUM  TRAINED vs RANDOM (null control)")
-    print("  trained: slope~1, r~1 (uses g/l).  random: no tracking (slope~0, r~0) => learned.")
     print("=" * 85)
     rows = {}
     for arch, df in arch_dfs.items():
@@ -120,10 +119,7 @@ def main():
                 "mean_fit_r2": round(good["r2"].mean(), 3),
                 "n_valid": n_valid, "n_total": n_total, "note": ""}
     print(pd.DataFrame(rows).T.to_string())
-    print("\nReading: trained models track g/l (slope~1, r~1); random models do NOT")
-    print("(low slope/r, or too few finite estimates -> 'no coherent g/l'). The contrast")
-    print("shows g/l tracking is a LEARNED property, not an artifact of the estimator or")
-    print("architecture -- the behavioural analogue of the probe _random baseline.")
+
 
     print("\n[tracking data available per-config in the CSVs: true_gl, measured_gl, r2, config_tag]")
 

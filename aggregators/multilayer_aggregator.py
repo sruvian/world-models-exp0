@@ -30,7 +30,7 @@ def order_layers(index):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pattern", default="multilayer_probe")
+    ap.add_argument("--pattern", default="multilayer")
     ap.add_argument("--metric", default="r2_mean",
                     choices=["r2_mean", "above_baseline"],
                     help="r2_mean (raw) or above_baseline (R2 - shuffled)")
@@ -78,13 +78,6 @@ def main():
             g_max = tab["gravity"].max()
             print(f"\n  gravity: max {args.metric} across layers = {g_max:.3f}  "
                   f"({'FLOOR everywhere' if g_max < 0.15 else 'recoverable at some layer!'})")
-        state_present = [c for c in STATE_VARS if c in tab.columns]
-        if state_present:
-            s_min = tab[state_present].min().min()
-            print(f"  state vars: min {args.metric} across layers/vars = {s_min:.3f}  "
-                  f"({'recoverable everywhere' if s_min > 0.5 else 'check -- some low'})")
-        print("  => probe recovers state at every layer but gravity at none => gravity's")
-        print("     floor is representational, not probe weakness.")
 
     print("\n" + "=" * 88)
     print("GRAVITY across layers — feedforward architectures (the preemption result)")
@@ -102,8 +95,7 @@ def main():
         gtab = pd.DataFrame(grav)
         gtab = gtab.reindex(order_layers(gtab.index))
         print(gtab.round(3).to_string())
-        print("\n  Gravity stays at floor across ALL feedforward layers -> not hiding")
-        print("  one layer earlier/later. (Recurrent GRU/RSSM: future work.)")
+
 
 
 if __name__ == "__main__":

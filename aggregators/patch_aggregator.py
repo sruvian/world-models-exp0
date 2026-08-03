@@ -65,7 +65,7 @@ def verdict(pos, n, p):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pattern", default="activation",
+    ap.add_argument("--pattern", default="act_patch",
                     help="folder prefix, e.g. 'activation' matches activation_dmd/ etc.")
     ap.add_argument("--include_seeded", action="store_true")
     args = ap.parse_args()
@@ -147,20 +147,9 @@ def main():
     print("THREE-WAY PATCHING DISSOCIATION — cross-architecture verdict")
     print("=" * 100)
     print(summary.to_string())
-    print("\nReading:")
-    print("  real_vs_randvals  '+ sig' everywhere -> interventions are effective (sanity).")
-    print("  param rd (pend)   '~0'/'- sig'       -> THE CLAIM: probe dims NOT privileged")
-    print("                                          for physical parameters.")
-    print("  state rd (pend)   '+ sig'            -> POWER CONTROL: localisation DOES work")
-    print("                                          for state variables, so the test has power.")
-    print("  Splitting param from state is essential: pooled, the state signal drags rd")
-    print("  positive and masks the parameter non-localisation.")
-
     print("\n" + "=" * 100)
     print("NON-LOCALISATION BY PATCHED FRACTION  (top_k / latent_dim), pendulum only")
-    print("  rd = real - rand_dims; rd ~ 0 => probe dims NOT privileged over random dims.")
-    print("  Load-bearing cell = SMALLEST fraction (large d, small k): rd~0 there = strong claim.")
-    print("  Pendulum only (cartpole [:, :2] under-measures real-dims transport).")
+
     print("=" * 100)
     for arch_label, df in raw_dfs.items():
         pf = cell_means(df, env_filter="pendulum", by_fraction=True)

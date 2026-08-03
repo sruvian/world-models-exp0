@@ -97,14 +97,6 @@ def main():
     if rows:
         print(pd.DataFrame(rows).T.round(5).to_string())
 
-    print("\n  Reading: ascending j_a_norm = action-invariant -> action-sensitive.")
-    print("  If j_a_norm is comparable across envs despite cartpole's ~100x larger")
-    print("  force coefficient, coefficient magnitude is NOT what sets action-use;")
-    print("  consistent with the dt bottleneck (action enters only via acceleration,")
-    print("  hence scaled by dt, while state passes through near-identity integration).")
-    print("  NOTE: j_a_norm is a model-internal ratio; calling it 'low' requires a")
-    print("  true-dynamics denominator (dt/(m L^2) ~ 1e-4 at L=10). Report, don't editorialise.")
-
     print("\n" + "=" * 90)
     print("2. CONDITION NUMBER by latent_dim  (high = rank-deficient => null-space geometry)")
     print("=" * 90)
@@ -120,10 +112,8 @@ def main():
         print(f"\n  --- {env} ---")
         print(pd.DataFrame(cond_rows).round(1).to_string())
 
-    print("\n  Reading: high condition number = near-rank-deficient transition Jacobian.")
-    print("  This is the operator degeneracy underlying unreachable targets (comparator ceiling).")
 
-    print("\n  --- min_singular by latent_dim (smaller = closer to singular) ---")
+    print("\n  --- min_singular by latent_dim ---")
     for env in ["pendulum", "cartpole"]:
         ms_rows = {}
         for arch, df in arch_dfs.items():
@@ -169,8 +159,7 @@ def main():
             continue
         print(f"\n  --- {env} ---")
         print(pd.DataFrame(stab).T.round(4).to_string())
-    print("\n  Reading: spectral_radius > 1 => rollout diverges (the unconstrained-DMD")
-    print("  pathology that motivated the spectrally regularised variant).")
+
 
     print("\n" + "=" * 90)
     print("4. PHASE ERROR  (eigen-phase vs sqrt(g/l)*dt — FEEDFORWARD archs only)")
@@ -185,7 +174,6 @@ def main():
             continue
         print(f"  {arch}: phase_error mean={pe.mean():.4f} std={pe.std():.4f} "
               f"(expected_phase mean={df['expected_phase'].mean():.4f})")
-    print("\n  Low phase_error => model's eigenvalue rotation matches the pendulum frequency.")
 
     print("\n" + "=" * 90)
     print("MISSING ARCHITECTURES")
