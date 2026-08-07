@@ -38,20 +38,27 @@ if __name__=="__main__":
     trained_model = None
     states, actions = None, None
     matched_files = []
+    cache = yaml_out["datasets"].get("windowed_cache") or None
     if yaml_out["datasets"]["use_existing"]:
-
-        all_states, all_actions, all_metadata, config_sizes = [], [], [], []
-        for pattern in yaml_out["datasets"]["paths"]:
-            for path in glob.glob(pattern):
-                    data = np.load(path)
-                    matched_files.append(path)
-                    all_states.append(data["states"])
-                    all_actions.append(data["actions"])
-                    config_sizes.append(data["states"].shape[0])
-                    meta_keys = [k for k in data.files if k not in ("states", "actions")]
-                    all_metadata.append({ k: (data[k].item() if data[k].ndim == 0 else data[k].tolist()) for k in meta_keys})
-        states = np.concatenate(all_states, axis=0)
-        actions = np.concatenate(all_actions, axis=0)
+        K = hyperparams_config["rollout_steps"]
+        cache = yaml_out["datasets"].get("windowed_cache")
+        if cache is not None and os.path.exists(cache):
+            w = np.load(cache)
+            train_s, train_s_next, train_a = (torch.from_numpy(w[k]).to(device) for k in ("tr_s","tr_ns","tr_a"))
+            val_s, val_s_next, val_a       = (torch.from_numpy(w[k]).to(device) for k in ("va_s","va_ns","va_a"))
+        else:
+            all_states, all_actions, all_metadata, config_sizes = [], [], [], []
+            for pattern in yaml_out["datasets"]["paths"]:
+                for path in glob.glob(pattern):
+                        data = np.load(path)
+                        matched_files.append(path)
+                        all_states.append(data["states"])
+                        all_actions.append(data["actions"])
+                        config_sizes.append(data["states"].shape[0])
+                        meta_keys = [k for k in data.files if k not in ("states", "actions")]
+                        all_metadata.append({ k: (data[k].item() if data[k].ndim == 0 else data[k].tolist()) for k in meta_keys})
+            states = np.concatenate(all_states, axis=0)
+            actions = np.concatenate(all_actions, axis=0)
         
     else:
         all_metadata = []
@@ -80,7 +87,7 @@ if __name__=="__main__":
         optimizer = opts[hyperparams_config["optimizer"]](model.parameters(), lr = hyperparams_config["lr"])
         loss_func = losses[hyperparams_config["loss"]]()
 
-        if states is None or actions is None:
+        if cache is None and (states is None or actions is None):
             raise ValueError("Run the collector or use an existing dataset")
         paths = yaml_out["datasets"]["paths"]
         if yaml_out["datasets"]["use_existing"] and yaml_out['datasets']['regime'] != "single":
@@ -98,9 +105,10 @@ if __name__=="__main__":
         val_horizon = None
         if isinstance(model, WorldModelGRU) or isinstance(model, WorldModelRSSM):
             val_horizon = hyperparams_config['rollout_steps']
-        train_s, train_s_next, train_a, val_s, val_s_next, val_a = split_gen(states, actions, hyperparams_config["rollout_steps"],  device,
-                                                                             windows_per_traj=hyperparams_config['windows_per_traj'], val_horizon=val_horizon,
-                                                                             transient = hyperparams_config['transient'])
+        if cache is None:
+            train_s, train_s_next, train_a, val_s, val_s_next, val_a = split_gen(states, actions, hyperparams_config["rollout_steps"],  device,
+                                                                                windows_per_traj=hyperparams_config['windows_per_traj'], val_horizon=val_horizon,
+                                                                                transient = hyperparams_config['transient'])
         logger = Logger(model_config["name"], hyperparams_config["optimizer"], hyperparams_config["loss"], 
                 hyperparams_config["lr"], trainer_config["batch_size"], trainer_config["steps"],
                 env_config["gravity"], env_config.get("length", 0.0), model_config["latent_dim"], hyperparams_config["beta"])
