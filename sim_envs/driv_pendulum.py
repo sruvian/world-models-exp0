@@ -62,7 +62,7 @@ class DrivenPendulumSim(Environment):
             "dt": self.dt,
             "env_seed": self.env_seed,
             "params": {"gravity": self.gravity, "length": self.length, "mass1":
-                       self.mass1, "resonance": self.drive_omega, "res_amplitude": self.drive_amp, "damping": self.damping},
-            "readout_targets": ["g_over_l", "resonance",],
+                       self.mass1, "drive_omega": self.drive_omega, "drive_amp": self.drive_amp, "damping": self.damping},
+            "readout_targets": ["g_over_l", "drive_omega",],
             "probe_targets": ["cos_theta", "sin_theta", "theta_dot", "gravity", "g_over_l", "length"]
         }

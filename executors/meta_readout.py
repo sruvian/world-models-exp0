@@ -3,9 +3,14 @@ from pathlib import Path
 import numpy as np
 import torch
 from sklearn.linear_model import Ridge
-from analysis import get_data
-from analysis import parse_model, probeable_vars, make_metadata, INTERVENTION, prepare_probe_data, integrated_gradients, iter_model_groups, load_model
+from analysis.common.data_provider import get_data
+from analysis.common.prepare_data import probeable_vars, INTERVENTION, prepare_probe_data
+from analysis.common.utils import parse_model, load_model, iter_model_groups
+from analysis.common.regime import make_metadata
+from analysis.patchers.int_gradients import integrated_gradients
 from models.model import make_model
+from sklearn.linear_model import LinearRegression
+
 
 def readout_probe(z, target, **ctx):
     finite = np.isfinite(z).all(axis=1) & np.isfinite(target)
@@ -49,22 +54,56 @@ def generate_latents_rollout(model, states: torch.Tensor, actions: torch.Tensor,
                 outs.append(model.probe_representation(comp) if not full else comp)
 
         return torch.stack(outs, dim=1)
+    
+def pred_accel(pred_traj, dt = 0.01):
+    theta = torch.arctan2(pred_traj[:, :, 1], pred_traj[:, :, 0])
+    theta_u = np.unwrap(theta.detach().numpy(), axis=1)
+    thetadot = pred_traj[:, :, 2].detach().numpy()
+    theta_ddot = np.gradient(thetadot, dt, axis=1, edge_order=1)
+    sin_th = np.sin(theta_u)
+
+    if not (np.isfinite(theta_ddot).all() and np.isfinite(sin_th).all()):
+        return float("nan"), float("nan")
+
+    X = (-sin_th).reshape(-1, 1)
+    y = theta_ddot.reshape(-1, 1)
+    reg = LinearRegression().fit(X, y)
+    float(reg.coef_[0][0])
+
+def pred_accel_pointwise(pred_traj, dt=0.01):
+    thetadot = pred_traj[:, :, 2]
+    theta_ddot = (thetadot[:, 1] - thetadot[:, 0]) / dt
+    return theta_ddot
 
 def readout_ig(z, target, **ctx):
-    if ctx["channel"] is None:
-        return None
     model, channel, action = ctx["model"], ctx["channel"], ctx["action"]
     z_t = torch.tensor(z, dtype=torch.float32)
     if z_t.shape[0] > 500:
         idx = torch.randperm(z_t.shape[0])[:500]
         z_t = z_t[idx]
     baseline = z_t.mean(0, keepdim=True)
-    out_func = lambda zz: model.decode_computational(model.step_computational(zz, action.expand(zz.shape[0], -1)))[:, channel]
+    if channel is None:
+        def out_func(zz):
+            s_now  = model.decode_computational(zz)
+            s_next = model.decode_computational(model.step_computational(zz, action.expand(zz.shape[0], -1)))
+            theta_ddot = (s_next[:, 2] - s_now[:, 2]) / 0.01
+            return theta_ddot 
+    else:
+        out_func = lambda zz: model.decode_computational(model.step_computational(zz, action.expand(zz.shape[0], -1)))[:, channel]
     ig = integrated_gradients(out_func, z_t, baseline, num_steps=50)
     lhs = ig.sum(-1)
     rhs = out_func(z_t) - out_func(baseline)
+    rel_err = (lhs - rhs).abs().mean() / (rhs.abs().mean() + 1e-8)
     completeness_err = (lhs - rhs).abs().mean()
-    print(f"IG completeness error for channel {channel}: {completeness_err:.4f}")
+    print(f"IG completeness error for channel {channel}: {completeness_err:.4f}| Relative Error: {rel_err:.4f}")
+    if channel is None:
+        # weight per-sample IG by w_i = -sin(theta_i)/sum(sin^2) to attribute the SLOPE (g/l), not theta_ddot
+        # sin(theta) from the decoded current state of each subsampled latent
+        with torch.inference_mode():
+            sin_th = model.decode_computational(z_t)[:, 1]        # [N], dim 1 = sin(theta)
+        w = -sin_th / (sin_th.pow(2).sum() + 1e-8)                # [N]
+        ig_gl = (w.unsqueeze(-1) * ig).sum(0)                     # [16] IG of the slope
+        return ig_gl.detach().numpy()
     return ig.mean(0).detach().numpy()
 
 def build_targets(states, g_t, l_t, regime, is_cartpole, repr="latent", T_roll = 1):
@@ -133,12 +172,18 @@ if __name__ == "__main__":
                 model, states, gravities, lengths, cfg["regime"], is_cartpole=is_cp)
 
             vars_here = probeable_vars(cfg["regime"], is_cp)
+            
 
             if args.representation == "computational":
                 z = acts["computational"]
                 z = z.numpy() if hasattr(z, "numpy") else z
                 ts = timesteps.get("computational", "current")
                 targets = cur_t if ts == "current" else nxt_t
+                # with torch.inference_mode():
+                #     z_t = torch.tensor(z, dtype=torch.float32)
+                #     a0 = torch.zeros(z_t.shape[0], 1)
+                #     s_next_pred = model.decode_computational(model.step_computational(z_t, a0))
+                #     theta_dot_pred = s_next_pred[:, 2].numpy()
             else:
                 probe = {"rollout_h": "h", "rollout_z": "z",
                          "rollout_full": "full"}[args.representation]
@@ -167,6 +212,7 @@ if __name__ == "__main__":
                 if "cos_theta" in vars_here: targets["cos_theta"] = s_all[:, :, 0].reshape(-1).numpy()
                 if "sin_theta" in vars_here: targets["sin_theta"] = s_all[:, :, 1].reshape(-1).numpy()
                 if "theta_dot" in vars_here: targets["theta_dot"] = s_all[:, :, 2].reshape(-1).numpy()
+                # if "theta_dot" in vars_here: targets["theta_dot"] = theta_dot_pred
                 if "x" in vars_here:         targets["x"] = s_all[:, :, 3].reshape(-1).numpy()
                 if "x_dot" in vars_here:     targets["x_dot"] = s_all[:, :, 4].reshape(-1).numpy()
                 if "gravity" in vars_here:   targets["gravity"] = g_flat
@@ -178,6 +224,10 @@ if __name__ == "__main__":
 
             for variable in vars_here:
                 target = targets[variable]
+                if variable not in ["g_over_l", "theta_dot"]:
+                    continue
+                # if "theta_dot" in vars_here:
+                #     targets["theta_dot"] = theta_dot_pred
                 assert z.shape[0] == target.shape[0], \
                     f"{variable}: z rows {z.shape[0]} != target rows {target.shape[0]}"
                 ctx = {"model": model, "channel": INTERVENTION[variable].get("channel"),

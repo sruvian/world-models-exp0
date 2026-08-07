@@ -17,7 +17,7 @@ import argparse
 
 opts = {"Adam": torch.optim.Adam, "SGD": torch.optim.SGD}
 losses = {"MSE": torch.nn.MSELoss}
-
+env_names = {"CartPoleSim": "cartpole", "DrivenPendulumSim": "driven", "PendulumSim": "pendulum"}
 
 if __name__=="__main__":
     args = argparse.ArgumentParser()
@@ -49,7 +49,7 @@ if __name__=="__main__":
                     all_actions.append(data["actions"])
                     config_sizes.append(data["states"].shape[0])
                     meta_keys = [k for k in data.files if k not in ("states", "actions")]
-                    all_metadata.append({k: data[k].item() for k in meta_keys})
+                    all_metadata.append({ k: (data[k].item() if data[k].ndim == 0 else data[k].tolist()) for k in meta_keys})
         states = np.concatenate(all_states, axis=0)
         actions = np.concatenate(all_actions, axis=0)
         
@@ -98,7 +98,9 @@ if __name__=="__main__":
         val_horizon = None
         if isinstance(model, WorldModelGRU) or isinstance(model, WorldModelRSSM):
             val_horizon = hyperparams_config['rollout_steps']
-        train_s, train_s_next, train_a, val_s, val_s_next, val_a = split_gen(states, actions, hyperparams_config["rollout_steps"],  device, windows_per_traj=1, val_horizon=val_horizon)
+        train_s, train_s_next, train_a, val_s, val_s_next, val_a = split_gen(states, actions, hyperparams_config["rollout_steps"],  device,
+                                                                             windows_per_traj=hyperparams_config['windows_per_traj'], val_horizon=val_horizon,
+                                                                             transient = hyperparams_config['transient'])
         logger = Logger(model_config["name"], hyperparams_config["optimizer"], hyperparams_config["loss"], 
                 hyperparams_config["lr"], trainer_config["batch_size"], trainer_config["steps"],
                 env_config["gravity"], env_config.get("length", 0.0), model_config["latent_dim"], hyperparams_config["beta"])
@@ -111,10 +113,7 @@ if __name__=="__main__":
         base_dir = os.path.join(base_dir, yaml_out['checkpointing']['logbase_dir'])
         if collector_config["impulse_policy"]:
             base_dir = os.path.join(base_dir, "impulse_policy")
-        if env_config['name'] == "CartPoleSim":
-            log_dir = os.path.join(base_dir, "cartpole")
-        else:
-            log_dir = os.path.join(base_dir, "pendulum")
+        log_dir = os.path.join(base_dir, env_names[env_config['name']])
         
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
@@ -140,10 +139,7 @@ if __name__=="__main__":
             model_save_path = yaml_out["checkpointing"]["save_path"]
             if collector_config["impulse_policy"]:
                 model_save_path = os.path.join(model_save_path, "impulse_policy")
-            if env_config['name'] == "CartPoleSim":
-                model_save_path = os.path.join(model_save_path, "cartpole")
-            else:
-                model_save_path = os.path.join(model_save_path, "pendulum") 
+            model_save_path = os.path.join(model_save_path, env_names[env_config['name']]) 
             os.makedirs(model_save_path, exist_ok= True)
             if model_config['name'] == "WorldModelVAE" or model_config["name"] == "WorldModelRSSM":
 

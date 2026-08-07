@@ -7,15 +7,8 @@ from analysis.common import parse_model, iter_model_groups, load_model, collect_
 
 
 def compute_jacobian_rssm(model, h, a):
-    """
-    h-recurrence Jacobian for RSSM: d h' / d h, where
-        z  = probe_state(h)              (prior mean, derived from h)
-        h' = GRU([z, a], h)
-    h : (hidden_dim,)   a : (action_dim,)
-    Returns (hidden_dim, hidden_dim) or None if degenerate.
-    """
     h = h.detach().requires_grad_(True)
-    z = model.probe_state(h)                                   # z from h (prior mean)
+    z = model.probe_state(h)
     h_next = model.gru(torch.cat([z, a], dim=-1).unsqueeze(0), h.unsqueeze(0)).squeeze(0)
     J = torch.zeros(h_next.shape[0], h.shape[0])
     for i in range(h_next.shape[0]):
@@ -27,11 +20,8 @@ def compute_jacobian_rssm(model, h, a):
 
 
 def action_jacobian_rssm(model, h, a):
-    """
-    Action Jacobian for RSSM: d h' / d a  (action-sensitivity of the recurrence).
-    """
     a = a.detach().requires_grad_(True)
-    z = model.probe_state(h)                                   # z from h (h fixed here)
+    z = model.probe_state(h)
     h_next = model.gru(torch.cat([z, a], dim=-1).unsqueeze(0), h.unsqueeze(0)).squeeze(0)
     J_a = torch.zeros(h_next.shape[0])
     for i in range(h_next.shape[0]):

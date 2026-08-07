@@ -1,8 +1,8 @@
 #!/bin/bash
 set -u
 
-YAML_DIR="combined_generated"
-LOG_DIR="logs_seed"
+YAML_DIR="driven_generated"
+LOG_DIR="logs_driven"
 mkdir -p "$LOG_DIR"
 
 MAX_JOBS=$(( $(nproc) - 2 ))

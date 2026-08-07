@@ -14,26 +14,28 @@ def split_gen(states: np.ndarray | torch.Tensor,
               actions: np.ndarray | torch.Tensor,
               rollout: int = 1, device: str = "cpu",
               windows_per_traj: int = 1,
-              split_seed: int = 42, val_horizon: int| None = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+              split_seed: int = 42, val_horizon: int| None = None, transient:int|None = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     rng = np.random.default_rng(split_seed)
     if isinstance(states, torch.Tensor):
         states = states.numpy()
     if isinstance(actions, torch.Tensor):
         actions = actions.numpy()
-
+    if transient is not None:
+        states = states[:,transient:, :]
+        actions = actions[:,transient:]
     N, T, state_dim = states.shape
     traj_perm = rng.permutation(N)
     train_idx = int(0.9 * N)
     train_traj, val_traj = traj_perm[:train_idx], traj_perm[train_idx:]
     def make_windows(traj_idx, window, win_per_traj):
         all_states, all_actions, all_nxt = [], [], []
-        for i in range(N):
-            start_idxs = rng.integers(0, T - rollout, size=windows_per_traj)
+        for i in traj_idx:
+            start_idxs = rng.integers(0, T - window, size=win_per_traj)
             for s in start_idxs:
-                all_states.append(states[i, s:s+rollout])
-                all_actions.append(actions[i, s:s+rollout])
-                all_nxt.append(states[i, s+1:s+rollout+1])
-        return np.array(all_states, np.float32), np.array(all_actions, np.float32), np.array(all_nxt, np.float32)
+                all_states.append(states[i, s:s+window])
+                all_actions.append(actions[i, s:s+window])
+                all_nxt.append(states[i, s+1:s+window+1])
+        return (np.array(all_states, np.float32), np.array(all_actions, np.float32), np.array(all_nxt, np.float32))
     
     train_s, train_a, train_ns = make_windows(train_traj, rollout, windows_per_traj)
     p = rng.permutation(train_s.shape[0])
@@ -162,7 +164,7 @@ def trainer(
                     val_loss = rollout_loss(model, val_states[val_idx], val_actions[val_idx], val_next_states[val_idx], loss_func, rollout_func, device = train_states.device)
             model.train()
             logger.log(running_loss / log_interval, val_loss.item(), step)
-            pbar.set_postfix(train_loss=running_loss/log_interval)
+            pbar.set_postfix(train_loss=running_loss/log_interval, val_loss = val_loss.item())
             running_loss = 0            
 
     return model
@@ -188,12 +190,13 @@ def rollout_loss_dmd(model: WorldModelDMD, states: torch.Tensor, actions: torch.
     K = states.shape[1]
     z = model.encode(states[:, 0, :])
     total_loss = torch.zeros(1, device=device)
+    w = torch.tensor([rollout_func(K,k) for k in range(K)], dtype =torch.float64, device=device)
+    w = w / w.mean()
     for k in range(K):
         a_k = actions[:, k].unsqueeze(-1)
         z = model.step(z, a_k)
         s_hat = model.decode(z)
-        weight = rollout_func(K, k)
-        total_loss += weight * loss_func(s_hat, next_states[:, k, :])
+        total_loss += w[k] * loss_func(s_hat, next_states[:, k, :])
 
     penalty = torch.zeros(1, device=device)
     if reg:

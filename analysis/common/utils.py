@@ -12,7 +12,7 @@ def _is_float(s: str) -> bool:
         return False
 
 KNOWN_REGIMES = {"combined", "holdg", "holdl", "single"}
-
+ENV_NAMES = {"cartpole": "CartPoleSim", "driven": "DrivenPendulumSim", "pendulum": "PendulumSim"}
 MODEL_NAMES = ("WorldModelDMD", "WorldModelGRU", "WorldModelRSSM", "WorldModelVAE", "Protocol A", "Protocol B")
 TAGS = {"WorldModel": 'mlp', "WorldModelVAE": 'vae', "WorldModelDMD": 'dmd', "WorldModelGRU": 'gru', "WorldModelRSSM": 'rssm'}
 def rollout_state(model, states, T_roll, device="cpu"):
@@ -63,7 +63,12 @@ def parse_model(path: Path) -> dict:
             elif part.startswith("latentA"): result["latent"] = int(part[7:])
             elif part.startswith("latentB"): result["latent_B"] = int(part[7:])
             elif part.startswith("steps"): result["steps"] = int(part[5:])
-        result["env"] = "CartPoleSim" if "cartpole" in str(path).lower() else "PendulumSim"
+        if "cartpole" in str(path).lower():
+            result["env"] = "CartPoleSim"
+        elif "driven" in str(path).lower():
+            result["env"] = "DrivenPendulumSim"
+        else:
+            result["env"] = "PendulumSim"
         return result
 
     for part in parts:

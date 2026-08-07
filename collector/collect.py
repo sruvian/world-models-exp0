@@ -50,7 +50,7 @@ class SparseImpulsePolicy:
         self._schedule_next()
 
 
-def collect_trajectories(env, num_trajectories: int, episode_time: int, policy_seed:int, save: bool = True, 
+def collect_trajectories(env, num_trajectories: int, episode_time: int, policy_seed:int, path:str| None=None, save: bool = True,
                          impulse_policy: bool = False,
                          min_duration: float = 0.01, max_duration: float = 0.05)-> tuple[np.ndarray, np.ndarray, dict[str, int|float]]:
 
@@ -102,28 +102,41 @@ def collect_trajectories(env, num_trajectories: int, episode_time: int, policy_s
     }
 
     if save:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
+            datasets_dir = path if path is not None else os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "..", "datasets")
+            os.makedirs(datasets_dir, exist_ok=True)
+            meta = env.get_metadata()
 
-        if impulse_policy:
-            datasets_dir = os.path.join(base_dir, "..", "datasets/impulse_policy")
-        else:
-            datasets_dir = os.path.join(base_dir, "..", "datasets/")
+            parts = [
+                "v0",
+                env.__class__.__name__,
+                f"N{num_trajectories}",
+                f"T{episode_time}",
+                f"env{meta['env_seed']}",
+                f"dt{meta['dt']:.3f}",
+            ]
+            if policy_seed is not None:
+                parts.append(f"pol{policy_seed}")
 
-        if not os.path.exists(datasets_dir):
-            os.makedirs(datasets_dir)
-        meta = env.get_metadata()
-        meta_str = "_".join(f"{k}{v:.3f}" if isinstance(v, float) else f"{k}{v}"
-                            for k, v in meta.items()
-                            if k not in ("env_seed", "dt", "damping"))
-        save_file = os.path.join(datasets_dir,
-            f"v0_{env.__class__.__name__}_N{num_trajectories}_T{episode_time}"
-            f"_env{meta['env_seed']}_pol{policy_seed}"
-            f"_dt{meta['dt']:.3f}_damp{meta['damping']:.3f}"
-            f"_{meta_str}.npz")
+            for k, v in meta["params"].items():
+                parts.append(f"{k}{v:.3f}" if isinstance(v, float) else f"{k}{v}")
 
-        np.savez(save_file,
-                states = states,
-                actions = actions,
-                **metadata)
+            save_file = os.path.join(datasets_dir, "_".join(parts) + ".npz")
+
+            save_dict = {
+                "states": states,
+                "actions": actions,
+                "name": meta["name"],
+                "dt": meta["dt"],
+                "env_seed": meta["env_seed"],
+                "policy_seed": policy_seed if policy_seed is not None else -1,
+            }
+            save_dict.update(meta["params"])
+            if "readout_targets" in meta:
+                save_dict["readout_targets"] = np.array(meta["readout_targets"])
+            if "probe_targets" in meta:
+                save_dict["probe_targets"] = np.array(meta["probe_targets"])
+
+            np.savez(save_file, **save_dict)
 
     return states, actions, metadata
