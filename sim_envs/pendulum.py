@@ -3,10 +3,7 @@ from .base_environment import Environment
 
 class PendulumSim(Environment):
 
-    def __init__(self, gravity: float, mass1: float, length: float, dt: float, max_action: float, damping: float, seed: int, mass2: int = 0) -> None:
-        
-        # Physical parameters
-
+    def __init__(self, gravity:float, mass1:float, length:float, max_action:float, damping:float, dt:float, seed:int, **kwargs):          
         self.gravity = gravity #m/s
         self.mass1 = mass1 # Kg
         self.length = length #metres
@@ -51,13 +48,12 @@ class PendulumSim(Environment):
             raise ValueError("Call reset() before calling get_state()")
         return np.array([np.cos(self.theta), np.sin(self.theta), self.theta_dot])
     
-    def get_metadata(self) -> dict:
+    def get_metadata(self):
         return {
-            "gravity": self.gravity,
-            "mass1": self.mass1,
-            "mass2": 0.0,          # placeholder for consistency
-            "length": self.length,
+            "name": self.name,
             "dt": self.dt,
-            "damping": self.damping,
             "env_seed": self.env_seed,
+            "params": {"gravity": self.gravity, "length": self.length, "mass1": self.mass1, "damping": self.damping},
+            "readout_targets": ["g_over_l"],
+            "probe_targets": ["cos_theta", "sin_theta", "theta_dot", "gravity", "g_over_l", "length"]
         }

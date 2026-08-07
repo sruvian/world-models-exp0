@@ -1,22 +1,14 @@
 import numpy as np
 
-class Environment():
+class Environment:
+    def __init__(self, dt: float, seed: int, **kwargs):
+        self.dt = dt
+        self.env_seed = seed
+        self.rng = np.random.default_rng(seed)
+        self.env_init = False
+        self.name = "base"
 
-    def __init__(self, gravity: float, mass1: float, length: float, dt: float, max_action: float, damping: float, seed: int, mass2: int = 0) -> None:
-       pass
-
-    def step(self, action: float)-> np.ndarray:
-        
-        raise NotImplementedError("Implement step")
-
-    def reset(self)-> np.ndarray:
-        
-        raise NotImplementedError("Implement reset")
-
-    def get_state(self) -> np.ndarray:
-        
-        raise NotImplementedError("Implement Get state")
-    
-    def get_metadata(self) -> dict:
-        
-        raise NotImplementedError("Update metadata")
+    def step(self, action): raise NotImplementedError
+    def reset(self):        raise NotImplementedError
+    def get_state(self):    raise NotImplementedError
+    def get_metadata(self): raise NotImplementedError

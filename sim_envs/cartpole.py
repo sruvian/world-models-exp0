@@ -3,7 +3,7 @@ from .base_environment import Environment
 
 class CartPoleSim(Environment):
 
-    def __init__(self, gravity: float, mass1: float, mass2: float, length: float, dt: float, max_action: float, damping: float, seed: int ) -> None:
+    def __init__(self, gravity: float, mass1: float, mass2: float, length: float, dt: float, max_action: float, damping: float, seed: int, **kwargs ) -> None:
         
         self.gravity = gravity
         self.mass1 = mass1
@@ -74,11 +74,11 @@ class CartPoleSim(Environment):
     
     def get_metadata(self) -> dict:
         return {
-            "gravity": self.gravity,
-            "mass1": self.mass1,
-            "mass2": self.mass2,
-            "length": self.length * 2,  # full length
+            "name": self.name,
             "dt": self.dt,
-            "damping": self.damping,
             "env_seed": self.env_seed,
+            "params": {"gravity": self.gravity, "mass1": self.mass1,  "mass2": self.mass2, "length": self.length * 2,  # full length
+                       "damping": self.damping, },
+            "readout_targets": ["g_over_l"],
+            "probe_targets": ["cos_theta", "sin_theta", "theta_dot", "gravity", "g_over_l", "length", "x", "x_dot"]
         }
