@@ -30,7 +30,12 @@ def split_gen(states: np.ndarray | torch.Tensor,
     def make_windows(traj_idx, window, win_per_traj):
         all_states, all_actions, all_nxt = [], [], []
         for i in traj_idx:
-            start_idxs = rng.integers(0, T - window, size=win_per_traj)
+            hi = T - window
+            if hi <= 0:
+                raise ValueError(
+                    f"Trajectory too short for windowing: T={T} (after transient), "
+                    f"window={window}. Reduce transient or rollout_steps, or increase episode_time.")
+            start_idxs = rng.integers(0, hi, size=win_per_traj)
             for s in start_idxs:
                 all_states.append(states[i, s:s+window])
                 all_actions.append(actions[i, s:s+window])
