@@ -4,9 +4,9 @@ import numpy as np
 import torch
 from sklearn.linear_model import Ridge
 from analysis.common.data_provider import get_data
-from analysis.common.prepare_data import probeable_vars, INTERVENTION, prepare_probe_data
-from analysis.common.utils import parse_model, load_model, iter_model_groups
-from analysis.common.regime import make_metadata
+from analysis.common.prepare_data import prepare_probe_data
+from analysis.common.regime import probeable_vars, make_metadata, intervention_for
+from analysis.common.utils import parse_model, load_model, iter_model_groups, STATE_CHANNELS, DERIVED_TARGETS
 from analysis.patchers.int_gradients import integrated_gradients
 from models.model import make_model
 from sklearn.linear_model import LinearRegression
@@ -97,48 +97,35 @@ def readout_ig(z, target, **ctx):
     completeness_err = (lhs - rhs).abs().mean()
     print(f"IG completeness error for channel {channel}: {completeness_err:.4f}| Relative Error: {rel_err:.4f}")
     if channel is None:
-        # weight per-sample IG by w_i = -sin(theta_i)/sum(sin^2) to attribute the SLOPE (g/l), not theta_ddot
-        # sin(theta) from the decoded current state of each subsampled latent
         with torch.inference_mode():
-            sin_th = model.decode_computational(z_t)[:, 1]        # [N], dim 1 = sin(theta)
-        w = -sin_th / (sin_th.pow(2).sum() + 1e-8)                # [N]
-        ig_gl = (w.unsqueeze(-1) * ig).sum(0)                     # [16] IG of the slope
+            sin_th = model.decode_computational(z_t)[:, 1]
+        w = -sin_th / (sin_th.pow(2).sum() + 1e-8)
+        ig_gl = (w.unsqueeze(-1) * ig).sum(0)
         return ig_gl.detach().numpy()
     return ig.mean(0).detach().numpy()
 
-def build_targets(states, g_t, l_t, regime, is_cartpole, repr="latent", T_roll = 1):
-        vars_here = probeable_vars(regime, is_cartpole)
-        t = {}
-        if repr == 'latent_full':
-            s = states[:, 1:T_roll + 1, :]
-            g = g_t[:, 1:T_roll + 1]
-            l = l_t[:, 1:T_roll + 1]
-            if "cos_theta" in vars_here:      t["cos_theta"] =  s[:, :, 0].reshape(-1).numpy()
-            if "sin_theta" in vars_here:      t["sin_theta"] =  s[:, :, 1].reshape(-1).numpy()
-            if "theta_dot" in vars_here:  t["theta_dot"] = s[:, :, 2].reshape(-1).numpy()
-            if "x" in vars_here:          t["x"] = s[:, :, 3].reshape(-1).numpy()
-            if "x_dot" in vars_here:      t["x_dot"] = s[:, :, 4].reshape(-1).numpy()
-            if "gravity" in vars_here:    t["gravity"] = g.reshape(-1).numpy()
-            if "length" in vars_here:     t["length"] = l.reshape(-1).numpy()
-            if "g_over_l" in vars_here:   t["g_over_l"] = (g / l).reshape(-1).numpy()
-            if "sqrt_l_over_g" in vars_here: t["sqrt_l_over_g"] = torch.sqrt(l / g).reshape(-1).numpy()
-        
-        if repr == "latent":
-            if "cos_theta" in vars_here:      t["cos_theta"] =  states[:, :, 0].reshape(-1).numpy()
-            if "sin_theta" in vars_here:      t["sin_theta"] =  states[:, :, 1].reshape(-1).numpy()
-            if "theta_dot" in vars_here:  t["theta_dot"] = states[:, :, 2].reshape(-1).numpy()
-            if "x" in vars_here:          t["x"] = states[:, :, 3].reshape(-1).numpy()
-            if "x_dot" in vars_here:      t["x_dot"] = states[:, :, 4].reshape(-1).numpy()
-            if "gravity" in vars_here:    t["gravity"] = g_t.reshape(-1).numpy()
-            if "length" in vars_here:     t["length"] = l_t.reshape(-1).numpy()
-            if "g_over_l" in vars_here:   t["g_over_l"] = (g_t / l_t).reshape(-1).numpy()
-            if "sqrt_l_over_g" in vars_here: t["sqrt_l_over_g"] = torch.sqrt(l_t / g_t).reshape(-1).numpy()
-        elif repr == 'state':
-            if "gravity" in vars_here:    t["gravity"] = g_t.reshape(-1).numpy()
-            if "length" in vars_here:     t["length"] = l_t.reshape(-1).numpy()
-            if "g_over_l" in vars_here:   t["g_over_l"] = (g_t / l_t).reshape(-1).numpy()
-            if "sqrt_l_over_g" in vars_here: t["sqrt_l_over_g"] = torch.sqrt(l_t / g_t).reshape(-1).numpy()
-        return t
+def _build_probe_targets(states, params_arr, env_name, probe_targets,
+                         regime, hold_param, repr, T_roll=1):
+    channels = STATE_CHANNELS.get(env_name, {})
+    vars_here = probeable_vars(probe_targets, env_name, regime, hold_param)
+    t = {}
+
+    if repr == "latent_full":
+        s = states[:, 1:T_roll + 1, :]
+        P = {k: v[:, 1:T_roll + 1] for k, v in params_arr.items()}
+    else:
+        s = states
+        P = params_arr
+
+    for name in vars_here:
+        if name in channels:
+            if repr == "state":
+                continue
+            t[name] = s[:, :, channels[name]].reshape(-1).numpy()
+        elif name in DERIVED_TARGETS:
+            val = DERIVED_TARGETS[name](P)
+            t[name] = np.asarray(val).reshape(-1)
+    return t
 READOUT_METHODS = {"probe": readout_probe, "ig": readout_ig}
 
 
@@ -164,14 +151,13 @@ if __name__ == "__main__":
             cfg = parse_model(Path(mf))
             if cfg["regime"] is None:
                 continue
-            is_cp = cfg["env"] == "CartPoleSim"
-            model = load_model(mf, cfg, args.device)
+            model = load_model(mf, cfg, device=args.device)
 
-            states, gravities, lengths = get_data(cfg)
+            states, params_list, probe_targets = get_data(cfg)
             acts, timesteps, cur_t, nxt_t, config_labels = prepare_probe_data(
-                model, states, gravities, lengths, cfg["regime"], is_cartpole=is_cp)
+                model, states, params_list, probe_targets, cfg["env"])
 
-            vars_here = probeable_vars(cfg["regime"], is_cp)
+            vars_here = probeable_vars(probe_targets, cfg["env"], cfg["regime"], cfg.get("hold_param"))
             
 
             if args.representation == "computational":
@@ -190,7 +176,8 @@ if __name__ == "__main__":
 
                 z_parts, s_parts, g_parts, l_parts = [], [], [], []
                 T_eff = None
-                for s_np, g, l in zip(states, gravities, lengths):
+                for s_np, params in zip(states, params_list):
+                    g, l = params["gravity"], params["length"]
                     s = torch.from_numpy(s_np).float()
                     a = torch.zeros(s.shape[0], s.shape[1], 1)
                     z_roll = generate_latents_rollout(model, s, a,
@@ -230,14 +217,15 @@ if __name__ == "__main__":
                 #     targets["theta_dot"] = theta_dot_pred
                 assert z.shape[0] == target.shape[0], \
                     f"{variable}: z rows {z.shape[0]} != target rows {target.shape[0]}"
-                ctx = {"model": model, "channel": INTERVENTION[variable].get("channel"),
+                ctx = {"model": model, "channel": intervention_for(variable, env_name=cfg["env"]),
                        "action": action, "alpha": 10.0}
                 direction = READOUT_METHODS[args.readout_type](z, target, **ctx)
                 if direction is None:
                     print(f"  [skip] {variable}: non-finite latents")
                     continue
                 meta = make_metadata(args.readout_type, variable, args.representation,
-                                     cfg["model_name"], cfg["latent"], cfg["regime"], cfg["seed"])
+                     cfg["model_name"], cfg["latent"], cfg["regime"], cfg["seed"],
+                     cfg["env"])
                 meta["checkpoint"] = str(Path(mf))
                 meta["t_roll"] = args.t_roll or 0
                 meta["dim"] = int(z.shape[-1])

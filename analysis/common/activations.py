@@ -1,5 +1,4 @@
 import torch
-from models.wmodel import WorldModel, WorldModelVAE
 
 def make_hook(acts, name):
     def fn(module, inp, out):
@@ -13,12 +12,13 @@ def collect_activations(model, states, actions):
     with torch.no_grad():
         c = model.encode_computational(states)
         if spec:
+            if actions.dim() == 1: actions = actions.unsqueeze(-1)
             t = model.step_computational(c, actions)
             _ = model.decode_computational(t)
     for handle in handles:
         handle.remove()
     if isinstance(c, tuple):
-        acts["computational"] = c[1].detach()
+        acts["computational"] = model.probe_representation(c).detach()
         acts["computational_full"] = torch.cat(c, dim=-1).detach()
     else:
         acts["computational"] = c.detach()

@@ -4,6 +4,7 @@ import glob
 from collections import defaultdict
 import os
 from models import make_model
+import numpy as np
 
 def _is_float(s: str) -> bool:
     try:
@@ -11,8 +12,27 @@ def _is_float(s: str) -> bool:
     except ValueError:
         return False
 
+DERIVED_TARGETS = {
+    "gravity":       lambda p: p["gravity"],
+    "length":        lambda p: p["length"],
+    "g_over_l":      lambda p: p["gravity"] / p["length"],
+    "sqrt_l_over_g": lambda p: np.sqrt(p["length"] / p["gravity"]),
+    "sqrt_g_over_l": lambda p: np.sqrt(p["gravity"] / p["length"]),
+    "drive_omega":   lambda p: p["drive_omega"],
+    "damping": lambda p: p["damping"]
+    # Lorenz: "rho": lambda p: p["rho"],
+}
+STATE_CHANNELS = {
+    "PendulumSim":       {"cos_theta": 0, "sin_theta": 1, "theta_dot": 2},
+    "DrivenPendulumSim": {"cos_theta": 0, "sin_theta": 1, "theta_dot": 2,
+                          "cos_phase": 3, "sin_phase": 4},
+    "CartPoleSim":       {"cos_theta": 0, "sin_theta": 1, "theta_dot": 2,
+                          "x": 3, "x_dot": 4},
+    # "LorenzSim": {"x": 0, "y": 1, "z": 2},
+}
+HIDDEN_DIM = {"WorldModelDMD": 128} 
 KNOWN_REGIMES = {"combined", "holdg", "holdl", "single"}
-ENV_NAMES = {"cartpole": "CartPoleSim", "driven": "DrivenPendulumSim", "pendulum": "PendulumSim"}
+ENV_NAMES = {"CartPoleSim": "cartpole", "DrivenPendulumSim": "driven", "PendulumSim": "pendulum"}
 MODEL_NAMES = ("WorldModelDMD", "WorldModelGRU", "WorldModelRSSM", "WorldModelVAE", "Protocol A", "Protocol B")
 TAGS = {"WorldModel": 'mlp', "WorldModelVAE": 'vae', "WorldModelDMD": 'dmd', "WorldModelGRU": 'gru', "WorldModelRSSM": 'rssm'}
 def rollout_state(model, states, T_roll, device="cpu"):
@@ -94,7 +114,13 @@ def parse_model(path: Path) -> dict:
     if result["regime"] is None and (result["g"] or result["l"]):
         result["config"] = f"g{result['g']}_l{result['l']}"
 
-    result["env"] = "CartPoleSim" if "cartpole" in str(path).lower() else "PendulumSim"
+    p = str(path).lower()
+    if "cartpole" in p:
+        result["env"] = "CartPoleSim"
+    elif "driven" in p:
+        result["env"] = "DrivenPendulumSim"
+    else:
+        result["env"] = "PendulumSim"
     return result
 
 
@@ -103,19 +129,26 @@ def iter_model_groups(top_dir):
     
     for path in glob.glob(os.path.join(top_dir, "**", "*.pt"), recursive=True):
         cfg = parse_model(Path(path))
-        env_tag = "cartpole" if cfg["env"] == "CartPoleSim" else "pendulum"
+        env_tag = ENV_NAMES[cfg["env"]]
         policy_tag = "sparse" if cfg["impulse"] else "noise"
         model_tag = TAGS[cfg["model_name"]]
         groups[(env_tag, policy_tag, model_tag)].append(path)
     return groups
 
+def infer_state_dim(state_dict, cfg):
+    for k, v in state_dict.items():
+        if "encoder" in k and "weight" in k and v.ndim == 2:
+            return v.shape[1]
+    return len(STATE_CHANNELS[cfg["env"]])
 
-def load_model(model_file, cfg, device="cpu"):
-    is_cp = cfg["env"] == "CartPoleSim"
-    model = make_model(cfg["model_name"], state_dim=5 if is_cp else 3, action_dim=1,
+def load_model(model_file, cfg, random_init = False, device="cpu"):
+    sd = torch.load(model_file, map_location=device)
+    state_dim = infer_state_dim(sd, cfg)  
+    model = make_model(cfg["model_name"], state_dim=state_dim, action_dim=1,
                        hidden_dim=HIDDEN_DIM.get(cfg["model_name"], 64), latent_dim=cfg["latent"])
-    model.load_state_dict(torch.load(model_file, map_location=device))
+    if random_init:
+        model.eval()
+        return model
+    model.load_state_dict(sd)
     model.eval()
     return model
-
-HIDDEN_DIM = {"WorldModelDMD": 128}

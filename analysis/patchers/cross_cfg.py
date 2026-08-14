@@ -1,7 +1,7 @@
 
 import numpy as np
 import torch
-from analysis.common.regime import checkable_vars, INTERVENTION
+from analysis.common.regime import checkable_vars, intervention_for
 from analysis.common.data_provider import collect_for_config
 from models.wmodel import WorldModelRSSM
 from analysis.common.utils import rollout_state
@@ -73,20 +73,27 @@ def _apply_patch(z_tgt, z_src, dims, mode, latent_dim, rng, is_rssm, space="z"):
 def cross_config_patch(model, direction, meta, cfg, writer, device, rng,
                        top_ks=(1,2,3,4,5), n_traj=50, steps=100,
                        representation="computational", t_roll=None):
+    env_name = cfg["env"]
     variable = meta["variable"]
-    if INTERVENTION[variable]["type"] != "config":
+    if intervention_for(variable, env_name)["type"] != "config":
         return
+    if env_name != "PendulumSim" and env_name != "CartPoleSim":
+        return
+
     is_rssm = isinstance(model, WorldModelRSSM)
     space = "h" if representation == "rollout_h" else "z"
     if space == "h" and not is_rssm:
         return
 
     for (g_src, l_src), (g_tgt, l_tgt) in _config_pairs(variable, cfg["regime"]):
-        src_s, _ = collect_for_config(g_src, l_src, cfg["env"], cfg["impulse"],
+        src_params = {"gravity": g_src, "length": l_src, "mass1": 1.0, "dt": 0.01, "damping": 0.0}
+        tgt_params = {"gravity": g_tgt, "length": l_tgt, "mass1": 1.0, "dt": 0.01, "damping": 0.0}
+        if env_name == "CartPoleSim":
+            src_params.update(mass1=0.1, mass2=1.0); tgt_params.update(mass1=0.1, mass2=1.0)
+        src_s, _ = collect_for_config(env_name, src_params, impulse=cfg["impulse"],
                                       seed=4200, n_traj=n_traj, steps=steps)
-        tgt_s, _ = collect_for_config(g_tgt, l_tgt, cfg["env"], cfg["impulse"],
+        tgt_s, _ = collect_for_config(env_name, tgt_params, impulse=cfg["impulse"],
                                       seed=4200, n_traj=n_traj, steps=steps)
-
         if representation.startswith("rollout_"):
             T = t_roll if t_roll else steps - 1
             z_src = rollout_state(model, src_s, T, device)

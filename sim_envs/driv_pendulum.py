@@ -64,5 +64,5 @@ class DrivenPendulumSim(Environment):
             "params": {"gravity": self.gravity, "length": self.length, "mass1":
                        self.mass1, "drive_omega": self.drive_omega, "drive_amp": self.drive_amp, "damping": self.damping},
             "readout_targets": ["g_over_l", "drive_omega",],
-            "probe_targets": ["cos_theta", "sin_theta", "theta_dot", "gravity", "g_over_l", "length"]
-        }
+            "probe_targets": ["cos_theta", "sin_theta", "theta_dot", "cos_phase", "sin_phase", "gravity", "length", "g_over_l", "sqrt_g_over_l", "drive_omega"]
+                }

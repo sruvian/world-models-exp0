@@ -52,3 +52,7 @@ sanity*/
 *png
 multilayer*
 test
+*_generated
+*_yamls
+!trainer_yamls
+windowed

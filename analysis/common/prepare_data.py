@@ -1,38 +1,42 @@
 import numpy as np
 import torch
-from .regime import probeable_vars, INTERVENTION
 from .activations import collect_activations
+from .utils import STATE_CHANNELS, DERIVED_TARGETS
 
-def build_targets(states, g_flat, l_flat, regime, is_cartpole):
-    """Targets ONLY for variables that vary in this regime (via probeable_vars)."""
-    vars_here = probeable_vars(regime, is_cartpole)
+
+
+def build_targets(states, params_flat, probe_targets, env_name):
+
+    channels = STATE_CHANNELS.get(env_name, {})
     t = {}
-
-    if "cos_theta" in vars_here:
-        t["cos_theta"] = states[:, 0]
-    if "sin_theta" in vars_here:
-        t["sin_theta"] = states[:, 1]
-    if "theta_dot" in vars_here:
-        t["theta_dot"] = states[:, 2]
-    if "x" in vars_here:
-        t["x"] = states[:, 3]
-    if "x_dot" in vars_here:
-        t["x_dot"] = states[:, 4]
-    if "gravity" in vars_here:
-        t["gravity"] = g_flat
-    if "length" in vars_here:
-        t["length"] = l_flat
-    if "g_over_l" in vars_here:
-        t["g_over_l"] = g_flat / l_flat
-    if "sqrt_l_over_g" in vars_here:
-        t["sqrt_l_over_g"] = np.sqrt(l_flat / g_flat)
+    for name in probe_targets:
+        if name in channels:
+            t[name] = states[:, channels[name]]
+        elif name in DERIVED_TARGETS:
+            t[name] = _derived_per_sample(name, params_flat)
     return t
 
-def prepare_probe_data(model, all_states, gravities, lengths, regime,
-                       is_cartpole=False):
-    cur_list, nxt_list, g_list, l_list, cfg_list = [], [], [], [], []
 
-    for ci, (s, g, l) in enumerate(zip(all_states, gravities, lengths)):
+def _derived_per_sample(name, params_flat):
+    fn = DERIVED_TARGETS[name]
+    keys = params_flat.keys()
+    N = len(next(iter(params_flat.values())))
+    out = np.empty(N, dtype=np.float32)
+    try:
+        out = fn({k: params_flat[k] for k in keys}).astype(np.float32)
+    except Exception:
+        for i in range(N):
+            out[i] = fn({k: params_flat[k][i] for k in keys})
+    return out
+
+
+def prepare_probe_data(model, all_states, params_list, probe_targets, env_name):
+
+    cur_list, nxt_list, cfg_list = [], [], []
+    param_keys = sorted({k for p in params_list for k in p})
+    param_accum = {k: [] for k in param_keys}
+
+    for ci, (s, params) in enumerate(zip(all_states, params_list)):
         D = s.shape[-1]
         cur = s[:, :-1, :].reshape(-1, D)
         nxt = s[:, 1:,  :].reshape(-1, D)
@@ -40,19 +44,19 @@ def prepare_probe_data(model, all_states, gravities, lengths, regime,
 
         cur_list.append(cur)
         nxt_list.append(nxt)
-        g_list.append(np.full(n, float(g)))
-        l_list.append(np.full(n, float(l)))
         cfg_list.append(np.full(n, ci, dtype=int))
+        for k in param_keys:
+            param_accum[k].append(np.full(n, float(params.get(k, np.nan))))
 
     current = np.concatenate(cur_list, axis=0).astype(np.float32)
     next_   = np.concatenate(nxt_list, axis=0).astype(np.float32)
-    g_flat  = np.concatenate(g_list)
-    l_flat  = np.concatenate(l_list)
     config_labels = np.concatenate(cfg_list)
+    params_flat = {k: np.concatenate(v) for k, v in param_accum.items()}
+
     action = torch.zeros(len(current), 1)
     acts, timesteps = collect_activations(model, torch.from_numpy(current), action)
 
-    current_targets = build_targets(current, g_flat, l_flat, regime, is_cartpole)
-    next_targets    = build_targets(next_,   g_flat, l_flat, regime, is_cartpole)
+    current_targets = build_targets(current, params_flat, probe_targets, env_name)
+    next_targets    = build_targets(next_,   params_flat, probe_targets, env_name)
 
     return acts, timesteps, current_targets, next_targets, config_labels

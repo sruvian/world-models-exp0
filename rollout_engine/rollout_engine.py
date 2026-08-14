@@ -47,3 +47,24 @@ class RolloutEngine:
                 z = self.model.step(z, a_k)
                 latents.append(z)
         return torch.stack(latents, dim=1)
+    def resonance_rollout(self, s0, drive_omega, dt, horizon, phase_dims=(3, 4)):
+        self.model.eval()
+        preds = []
+        s = s0.clone()
+        B = s.shape[0]
+        with torch.inference_mode():
+            for k in range(horizon):
+                t = (k + 1) * dt
+                comp = self.model.encode_computational(s)
+                a0 = torch.zeros(B, 1, device=s.device)
+                comp = self.model.step_computational(comp, a0)
+                s_hat = self.model.decode_computational(comp)
+
+                s_hat = s_hat.clone()
+                ph = torch.as_tensor(drive_omega * t, device=s.device, dtype=s.dtype)
+                s_hat[:, phase_dims[0]] = torch.cos(ph)
+                s_hat[:, phase_dims[1]] = torch.sin(ph)
+
+                preds.append(s_hat)
+                s = s_hat
+        return torch.stack(preds, dim=1)

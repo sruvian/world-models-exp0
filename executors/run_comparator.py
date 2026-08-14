@@ -4,8 +4,8 @@ from pathlib import Path
 import numpy as np
 import torch
 from analysis.common.utils import parse_model, load_model, TAGS, rollout_state
-from analysis.common.regime import checkable_vars, INTERVENTION
-from analysis.common.data_provider import collect_for_config
+from analysis.common.regime import checkable_vars, intervention_for
+from analysis.common.data_provider import collect_for_config,make_env_from_params
 from analysis.do_checker.checker import DoChecker
 from analysis.do_checker.val_suite import ValidationSuite
 from models import WorldModelRSSM
@@ -21,7 +21,7 @@ def config_dict(env, g, l):
 
 
 def source_target_configs(variable, cfg):
-    iv = INTERVENTION[variable]
+    iv = intervention_for(variable, cfg['env'])
     regime = cfg["regime"]
 
     if iv["type"] == "config":
@@ -63,31 +63,37 @@ if __name__ == "__main__":
         meta = {k: d[k].item() for k in d.files if k != "direction"}
         variable = meta["variable"]
 
-        cfg_stub = {"regime": meta["regime"]}
-        if variable not in checkable_vars(meta["regime"], is_cartpole=("cartpole" in meta.get("checkpoint","").lower())):
+        ckpt = meta.get("checkpoint", "")
+        env_name = ("CartPoleSim" if "cartpole" in ckpt.lower()
+                    else "DrivenPendulumSim" if "driven" in ckpt.lower()
+                    else "PendulumSim")
+        if env_name == "DrivenPendulumSim":
+            continue
+
+        probe_targets = make_env_from_params(
+            env_name, ["cos_theta","sin_theta","theta_dot","gravity","length","g_over_l","sqrt_l_over_g"], seed=0).get_metadata()["probe_targets"]
+        if variable not in checkable_vars(probe_targets, env_name,
+                                          meta["regime"], meta.get("hold_param")):
             continue
 
         model_file = Path(meta["checkpoint"])
         if not model_file.exists():
             print(f"[skip] model not found: {meta['checkpoint']}"); continue
         mf = str(model_file)
-        
+
         cfg = parse_model(Path(mf))
-        is_cp = cfg["env"] == "CartPoleSim"
-        model = load_model(mf, cfg, args.device)
         if mf not in model_cache:
-            model_cache[mf] = load_model(mf, cfg, args.device)
+            model_cache[mf] = load_model(mf, cfg, device=args.device)
         model = model_cache[mf]
 
         (gs, ls), (gt, lt) = source_target_configs(variable, cfg)
         source_config = config_dict(cfg["env"], gs, ls)
         target_config = config_dict(cfg["env"], gt, lt)
-        iv = INTERVENTION[variable]
+        iv = intervention_for(variable, cfg["env"])
         channel = iv.get("channel")
 
-        src_s, src_a = collect_for_config(gs, ls, cfg["env"], cfg["impulse"],
+        src_s, src_a = collect_for_config(cfg["env"], source_config, impulse=cfg["impulse"],
                                           seed=4200, n_traj=args.n_traj, steps=args.steps)
-
         representation = meta.get("layer", "computational")
         space = "h" if representation == "rollout_h" else "z"
         rolled = representation.startswith("rollout_")

@@ -9,6 +9,11 @@ from analysis.common.utils import TAGS
 from analysis.patchers import cross_config_patch 
 from models import WorldModelRSSM
 
+def config_dict(env, g, l):
+    if env == "CartPoleSim":
+        return dict(gravity=g, mass1=0.1, mass2=1.0, length=l, dt=0.01, max_action=10.0, damping=0.0)
+    return dict(gravity=g, mass1=1.0, mass2=0.0, length=l, dt=0.01, max_action=10.0, damping=0.0)
+
 ALL_CONFIGS = [(5.0,2.0),(5.0,10.0),(5.0,18.0),(9.8,2.0),(9.8,10.0),
                (9.8,18.0),(15.0,2.0),(15.0,10.0),(15.0,18.0)]
 
@@ -25,8 +30,9 @@ def run_activation_patch(model, direction, meta, cfg, writer, device, rng,
     eval_configs = ALL_CONFIGS if cfg["flag"] else [(cfg["g"], cfg["l"])]
     for g_eval, l_eval in eval_configs:
         is_ood = (g_eval, l_eval) not in ALL_CONFIGS
-        src_s, _ = collect_for_config(g_eval, l_eval, cfg["env"], cfg["impulse"], seed=4200)
-        tgt_s, _ = collect_for_config(g_eval, l_eval, cfg["env"], cfg["impulse"], seed=1000000)
+        params = config_dict(cfg["env"], g_eval, l_eval)
+        src_s, _ = collect_for_config(cfg["env"], params, impulse=cfg["impulse"], seed=4200)
+        tgt_s, _ = collect_for_config(cfg["env"], params, impulse=cfg["impulse"], seed=1000000)
         D = src_s.shape[-1]
 
         if representation.startswith("rollout_"):

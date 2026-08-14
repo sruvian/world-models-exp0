@@ -8,51 +8,59 @@ import csv
 import argparse
 from pathlib import Path
 from models import make_model
-from analysis.common import parse_model, load_model, iter_model_groups, get_data, HIDDEN_DIM, probeable_vars
+from analysis.common import parse_model, load_model, iter_model_groups, get_data, HIDDEN_DIM, probeable_vars, STATE_CHANNELS, DERIVED_TARGETS
 
-def generate_latents(model, states: torch.Tensor, full: bool = False) -> torch.Tensor:
+def generate_latents(model, states, full=False, batch=8192):
     model.eval()
     with torch.inference_mode():
-        N, T, state_dim = states.shape
-        flat = states.reshape(-1, state_dim)
-        comp = model.encode_computational(flat)
-        if full and isinstance(comp, tuple):
-            z = torch.cat(comp, dim=-1)
-        else:
-            z = model.probe_representation(comp)
-        return z.reshape(N, T, -1)
-    
-def generate_latents_rollout(model, states: torch.Tensor,
-                             full: bool = True, max_steps: int | None = None, probe_target = "full") -> torch.Tensor:
+        N, T, D = states.shape
+        if N == 0 or T == 0:
+            raise ValueError(f"generate_latents got empty states: shape {states.shape}")
+        flat = states.reshape(-1, D)
+        outs = []
+        for i in range(0, flat.shape[0], batch):
+            comp = model.encode_computational(flat[i:i+batch])
+            z = torch.cat(comp, dim=-1) if (full and isinstance(comp, tuple)) \
+                else model.probe_representation(comp)
+            outs.append(z)
+        return torch.cat(outs, dim=0).reshape(N, T, -1)
+        
+def generate_latents_rollout(model, states, full=True, max_steps=None,
+                             probe_target="full", traj_batch=512):
     model.eval()
-    actions = torch.zeros(states.shape[0], states.shape[1], 1)
     with torch.inference_mode():
-        N, T, _ = states.shape
+        N, T, D = states.shape
         T_roll = T - 1 if max_steps is None else min(max_steps, T - 1)
 
-        comp = model.encode_computational(states[:, 0, :])
-        outs = []
-        for t in range(T_roll):
-            a = actions[:, t]
-            if a.dim() == 1:
-                a = a.unsqueeze(-1)
+        chunks = []
+        for start in range(0, N, traj_batch):
+            s = states[start:start + traj_batch]
+            b = s.shape[0]
+            actions = torch.zeros(b, T, 1)
 
-            comp = model.step_computational(comp, a)
-            obs_comp = model.encode_computational(states[:, t + 1, :])
-            if isinstance(comp, tuple):
-                h_acc, _ = comp
-                _, z_obs = obs_comp if isinstance(obs_comp, tuple) else (None, obs_comp)
-                comp = (h_acc, z_obs)
-                if probe_target == "full":
-                    outs.append(torch.cat(comp, dim=-1) if full else z_obs)
-                elif probe_target == 'h':
-                    outs.append(h_acc)
-                elif probe_target == 'z':
-                    outs.append(z_obs)
-            else:
-                outs.append(model.probe_representation(comp) if not full else comp)
+            comp = model.encode_computational(s[:, 0, :])
+            outs = []
+            for t in range(T_roll):
+                a = actions[:, t]
+                if a.dim() == 1:
+                    a = a.unsqueeze(-1)
+                comp = model.step_computational(comp, a)
+                obs_comp = model.encode_computational(s[:, t + 1, :])
+                if isinstance(comp, tuple):
+                    h_acc, _ = comp
+                    _, z_obs = obs_comp if isinstance(obs_comp, tuple) else (None, obs_comp)
+                    comp = (h_acc, z_obs)
+                    if probe_target == "full":
+                        outs.append(torch.cat(comp, dim=-1) if full else z_obs)
+                    elif probe_target == 'h':
+                        outs.append(h_acc)
+                    elif probe_target == 'z':
+                        outs.append(z_obs)
+                else:
+                    outs.append(model.probe_representation(comp) if not full else comp)
 
-        return torch.stack(outs, dim=1)
+            chunks.append(torch.stack(outs, dim=1))
+        return torch.cat(chunks, dim=0)
     
 def compute_mi(train_z, train_target, neighbours=5, n_sub=5000, n_perm=5, seed=0):
     rng = np.random.default_rng(seed)
@@ -111,29 +119,60 @@ def run_probe(train_z: np.ndarray, val_z: np.ndarray,
     return r2, r2_shuffled, mi_mean
 
 
-def stratified_probe_split(model, all_states, gravities, lengths,
-                           is_cartpole, train_frac=0.8, regime="combined", representation="latent", roll = 200, probe_target = "full"):
-    train_s, val_s, train_g, val_g, train_l, val_l = [], [], [], [], [], []
+def _build_probe_targets(states, params_arr, env_name, probe_targets,
+                         regime, hold_param, repr, T_roll=1):
+    channels = STATE_CHANNELS.get(env_name, {})
+    vars_here = probeable_vars(probe_targets, env_name, regime, hold_param)
+    t = {}
 
-    for states_c, g_c, l_c in zip(all_states, gravities, lengths):
+    if repr == "latent_full":
+        s = states[:, 1:T_roll + 1, :]
+        P = {k: v[:, 1:T_roll + 1] for k, v in params_arr.items()}
+    else:
+        s = states
+        P = params_arr
 
-        n = states_c.shape[0]
-        ti = int(train_frac * n)
+    for name in vars_here:
+        if name in channels:
+            if repr == "state":
+                continue
+            t[name] = s[:, :, channels[name]].reshape(-1).numpy()
+        elif name in DERIVED_TARGETS:
+            val = DERIVED_TARGETS[name](P)
+            t[name] = np.asarray(val).reshape(-1)
+    return t
+
+def stratified_probe_split(model, all_states, params_list, env_name,
+                           probe_targets, train_frac=0.8, regime="combined",
+                           hold_param=None, representation="latent",
+                           roll=200, probe_target="full", max_traj_per_config=50, subsample_T=None):
+
+    param_keys = sorted({k for p in params_list for k in p})
+    train_s, val_s = [], []
+    train_P = {k: [] for k in param_keys}
+    val_P   = {k: [] for k in param_keys}
+
+    for states_c, params in zip(all_states, params_list):
+        if states_c.shape[0] == 0:
+            print(f"WARNING: config {params} has 0 trajectories, skipping")
+            continue
+        if max_traj_per_config and states_c.shape[0] > max_traj_per_config:
+            rng = np.random.default_rng(125)
+            idx = rng.choice(states_c.shape[0], max_traj_per_config, replace=False)
+            states_c = states_c[idx]
         N, T = states_c.shape[0], states_c.shape[1]
-
-        g_arr = np.full((N, T), float(g_c), dtype=np.float32)
-        l_arr = np.full((N, T), float(l_c), dtype=np.float32)
-
-        train_s.append(states_c[:ti]);  val_s.append(states_c[ti:])
-        train_g.append(g_arr[:ti]);      val_g.append(g_arr[ti:])
-        train_l.append(l_arr[:ti]);      val_l.append(l_arr[ti:])
+        ti = int(train_frac * N)
+        ti = max(1, min(ti, N - 1))
+        train_s.append(states_c[:ti]); val_s.append(states_c[ti:])
+        for k in param_keys:
+            arr = np.full((N, T), float(params.get(k, np.nan)), dtype=np.float32)
+            train_P[k].append(arr[:ti]); val_P[k].append(arr[ti:])
 
     train_states = torch.from_numpy(np.concatenate(train_s, 0)).float()
     val_states   = torch.from_numpy(np.concatenate(val_s, 0)).float()
-    train_gt = torch.from_numpy(np.concatenate(train_g, 0)).float()
-    val_gt   = torch.from_numpy(np.concatenate(val_g, 0)).float()
-    train_lt = torch.from_numpy(np.concatenate(train_l, 0)).float()
-    val_lt   = torch.from_numpy(np.concatenate(val_l, 0)).float()
+    train_params = {k: np.concatenate(v, 0) for k, v in train_P.items()}
+    val_params   = {k: np.concatenate(v, 0) for k, v in val_P.items()}
+
     if representation == "latent":
         train_z = generate_latents(model, train_states)
         val_z   = generate_latents(model, val_states)
@@ -141,54 +180,25 @@ def stratified_probe_split(model, all_states, gravities, lengths,
         train_z_flat = train_z.reshape(-1, latent_dim).numpy()
         val_z_flat   = val_z.reshape(-1, latent_dim).numpy()
     elif representation == "latent_full":
-        train_z = generate_latents_rollout(model, train_states, full=True,max_steps=roll, probe_target=probe_target)
-        val_z   = generate_latents_rollout(model, val_states, full=True, max_steps=roll, probe_target=probe_target)
+        train_z = generate_latents_rollout(model, train_states, full=True, max_steps=roll, probe_target=probe_target)
+        val_z   = generate_latents_rollout(model, val_states,   full=True, max_steps=roll, probe_target=probe_target)
         latent_dim = train_z.shape[-1]
         train_z_flat = train_z.reshape(-1, latent_dim).numpy()
         val_z_flat   = val_z.reshape(-1, latent_dim).numpy()
     elif representation == "state":
         latent_dim = train_states.shape[-1]
         train_z_flat = train_states.reshape(-1, latent_dim).numpy()
-        val_z_flat = val_states.reshape(-1, latent_dim).numpy()
+        val_z_flat   = val_states.reshape(-1, latent_dim).numpy()
+    else:
+        raise ValueError(f"unknown representation: {representation}")
 
-    def build_targets(states, g_t, l_t, regime, repr="latent", T_roll = 1):
-        vars_here = probeable_vars(regime, is_cartpole)
-        t = {}
-        if repr == 'latent_full':
-            s = states[:, 1:T_roll + 1, :]
-            g = g_t[:, 1:T_roll + 1]
-            l = l_t[:, 1:T_roll + 1]
-            # print(states.shape, g.shape, l.shape)
-            if "cos_theta" in vars_here:      t["cos_theta"] =  s[:, :, 0].reshape(-1).numpy()
-            if "sin_theta" in vars_here:      t["sin_theta"] =  s[:, :, 1].reshape(-1).numpy()
-            if "theta_dot" in vars_here:  t["theta_dot"] = s[:, :, 2].reshape(-1).numpy()
-            if "x" in vars_here:          t["x"] = s[:, :, 3].reshape(-1).numpy()
-            if "x_dot" in vars_here:      t["x_dot"] = s[:, :, 4].reshape(-1).numpy()
-            if "gravity" in vars_here:    t["gravity"] = g.reshape(-1).numpy()
-            if "length" in vars_here:     t["length"] = l.reshape(-1).numpy()
-            if "g_over_l" in vars_here:   t["g_over_l"] = (g / l).reshape(-1).numpy()
-            if "sqrt_l_over_g" in vars_here: t["sqrt_l_over_g"] = torch.sqrt(l / g).reshape(-1).numpy()
-        
-        if repr == "latent":
-            if "cos_theta" in vars_here:      t["cos_theta"] =  states[:, :, 0].reshape(-1).numpy()
-            if "sin_theta" in vars_here:      t["sin_theta"] =  states[:, :, 1].reshape(-1).numpy()
-            if "theta_dot" in vars_here:  t["theta_dot"] = states[:, :, 2].reshape(-1).numpy()
-            if "x" in vars_here:          t["x"] = states[:, :, 3].reshape(-1).numpy()
-            if "x_dot" in vars_here:      t["x_dot"] = states[:, :, 4].reshape(-1).numpy()
-            if "gravity" in vars_here:    t["gravity"] = g_t.reshape(-1).numpy()
-            if "length" in vars_here:     t["length"] = l_t.reshape(-1).numpy()
-            if "g_over_l" in vars_here:   t["g_over_l"] = (g_t / l_t).reshape(-1).numpy()
-            if "sqrt_l_over_g" in vars_here: t["sqrt_l_over_g"] = torch.sqrt(l_t / g_t).reshape(-1).numpy()
-        elif repr == 'state':
-            if "gravity" in vars_here:    t["gravity"] = g_t.reshape(-1).numpy()
-            if "length" in vars_here:     t["length"] = l_t.reshape(-1).numpy()
-            if "g_over_l" in vars_here:   t["g_over_l"] = (g_t / l_t).reshape(-1).numpy()
-            if "sqrt_l_over_g" in vars_here: t["sqrt_l_over_g"] = torch.sqrt(l_t / g_t).reshape(-1).numpy()
-        return t
-    T_roll = train_z.shape[1]
+    T_roll = train_z.shape[1] if representation != "state" else train_states.shape[1]
+
     return (train_z_flat, val_z_flat,
-            build_targets(train_states, train_gt, train_lt, regime, representation, T_roll),
-            build_targets(val_states, val_gt, val_lt, regime, representation, T_roll))
+            _build_probe_targets(train_states, train_params, env_name, probe_targets,
+                                 regime, hold_param, representation, T_roll),
+            _build_probe_targets(val_states, val_params, env_name, probe_targets,
+                                 regime, hold_param, representation, T_roll))
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
@@ -218,33 +228,50 @@ if __name__ == "__main__":
 
         for mf in files:
             cfg = parse_model(Path(mf))
-            is_cp = cfg["env"] == "CartPoleSim"
             print(f"\n[{Path(mf).name}]")
+
+            regime = cfg["regime"]
+            hold_param, hold_value = None, None
+            if regime == "holdg":
+                regime, hold_param, hold_value = "hold", "gravity", 9.8
+            elif regime == "holdl":
+                regime, hold_param, hold_value = "hold", "length", 10.0
+            cfg["regime"], cfg["hold_param"], cfg["hold_value"] = regime, hold_param, hold_value
+
             model = load_model(mf, cfg, args.device)
 
             random_model = None
             if args.random_init:
-                random_model = make_model(cfg["model_name"], state_dim=5 if is_cp else 3,
-                    action_dim=1, hidden_dim=HIDDEN_DIM.get(cfg["model_name"], 64),
-                    latent_dim=cfg["latent"])
+                state_dim = len(STATE_CHANNELS[cfg["env"]])
+                random_model = make_model(cfg["model_name"], state_dim=state_dim, action_dim=1,
+                    hidden_dim=HIDDEN_DIM.get(cfg["model_name"], 64), latent_dim=cfg["latent"])
+                random_model.eval()
 
-            states, gravities, lengths = get_data(cfg)
+            states, params_list, probe_targets = get_data(cfg)
+            env_name = cfg["env"]
 
             meta = {"checkpoint": Path(mf).name, "config": cfg["config"],
                     "latent": cfg["latent"], "k": cfg["k"], "policy": tag}
 
             train_z, val_z, train_t, val_t = stratified_probe_split(
-                model, states, gravities, lengths, is_cp, regime=cfg["regime"], representation=args.state_type, roll=args.roll, probe_target = args.probe_target)
+                model, states, params_list, env_name, probe_targets,
+                regime=cfg["regime"], hold_param=cfg.get("hold_param"),
+                representation=args.state_type, roll=args.roll, probe_target=args.probe_target)
+
             print("=== Trained ===")
             for tn in train_t:
-                run_probe(train_z, val_z, train_t[tn], val_t[tn], tn, writer, meta, args.alpha, args.neighbours, args.perm)
+                run_probe(train_z, val_z, train_t[tn], val_t[tn], tn, writer, meta,
+                        args.alpha, args.neighbours, args.perm)
 
             if random_model is not None:
                 rz_tr, rz_val, rt_tr, rt_val = stratified_probe_split(
-                    random_model, states, gravities, lengths, is_cp, regime=cfg["regime"], representation= args.state_type)
+                    random_model, states, params_list, env_name, probe_targets,
+                    regime=cfg["regime"], hold_param=cfg.get("hold_param"),
+                    representation=args.state_type)
                 print("=== Random baseline ===")
                 for tn in rt_tr:
-                    run_probe(rz_tr, rz_val, rt_tr[tn], rt_val[tn], f"{tn}_random", writer, meta, args.alpha, args.neighbours, args.perm)
+                    run_probe(rz_tr, rz_val, rt_tr[tn], rt_val[tn], f"{tn}_random", writer, meta,
+                            args.alpha, args.neighbours, args.perm)
 
             csv_file.flush()
         csv_file.close()
