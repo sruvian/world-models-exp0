@@ -19,6 +19,7 @@ collector:
   impulse_policy: false
 # Datasets
 datasets:
+  windowed_cache: null
   use_existing: true
   regime: "holdg"
   paths:
@@ -45,6 +46,8 @@ rollout_engine:
   zero_actions: False
 # Hyperparameters
 hyperparams:
+  transient: 1500
+  windows_per_traj: 1
   lam: 1.0
   reg: false
   optimizer: Adam

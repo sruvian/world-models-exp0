@@ -18,6 +18,7 @@ collector:
   impulse_policy: false
 
 datasets:
+  windowed_cache: null
   use_existing: true
   regime: "combined"
   paths:
@@ -49,6 +50,8 @@ rollout_engine:
 
 # Hyperparameters
 hyperparams:
+  transient: 1500
+  windows_per_traj: 1
   lam: 1.0
   reg: false
   optimizer: Adam

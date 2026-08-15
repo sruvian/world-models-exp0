@@ -18,10 +18,16 @@ HELDOUT_CONFIGS = [
     (17.0, 10.0),
     (17.0, 20.0),
     (3.0, 10.0),
+    (15, 0.5),
 ]
 SWEEP_CONFIGS = TRAIN_CONFIGS + HELDOUT_CONFIGS
 
-
+def _config_params(env_name, g, l):
+    p = {"gravity": g, "length": l, "mass1": 1.0, "dt": 0.01,
+         "damping": 0.0, "max_action": 10.0}
+    if env_name == "CartPoleSim":
+        p.update(mass1=0.1, mass2=1.0)
+    return p
 def tag_config(g, l):
     g_in = g in TRAIN_G
     l_in = l in TRAIN_L
@@ -95,12 +101,12 @@ if __name__ == "__main__":
 
     for mf in model_files:
         cfg = parse_model(Path(mf))
-        # if cfg["env"] == "CartPoleSim":
-        #     continue    # pendulum-only estimator
+        if cfg["env"] == "DrivenPendulumSim":
+            continue
 
         if mf not in model_cache:
-            trained = load_model(mf, cfg, args.device)
-            random_m = load_model(mf, cfg, args.device, random_init=True) \
+            trained = load_model(mf, cfg, device = args.device)
+            random_m = load_model(mf, cfg, device = args.device, random_init=True) \
                 if _supports_random_init() else _build_random(mf, cfg, args.device)
             model_cache[mf] = {"trained": trained, "random": random_m}
         models = model_cache[mf]
@@ -128,22 +134,24 @@ if __name__ == "__main__":
                 env=cfg["env"], manifold_mult=2.0)
 
             for (g_eval, l_eval) in SWEEP_CONFIGS:
+                params = _config_params(cfg["env"], g_eval, l_eval)
                 states, actions = collect_for_config(
-                    g_eval, l_eval, cfg["env"], cfg["impulse"],
+                    cfg["env"], params, impulse=cfg["impulse"],
                     seed=4200, n_traj=args.n_traj, steps=args.steps, max_action=args.action)
-                states = states.float() if torch.is_tensor(states) else torch.from_numpy(states).float()
-                actions = actions.float() if torch.is_tensor(actions) else torch.from_numpy(actions).float()
+                states  = states  if torch.is_tensor(states)  else torch.from_numpy(states)
+                actions = actions if torch.is_tensor(actions) else torch.from_numpy(actions)
+                states, actions = states.float(), actions.float()
 
                 k, r2 = estimate_effective_gl(checker, states, actions, args.dt)
                 true_gl = g_eval / l_eval
                 tag = tag_config(g_eval, l_eval)
                 w.writerow([Path(mf).name, model_type, cfg["latent"], cfg["k"], cfg["regime"],
                             g_eval, l_eval, round(true_gl, 6),
-                            (round(k, 6) if np.isfinite(k) else "nan"),
+                            (round(k, 6)  if np.isfinite(k)  else "nan"),
                             (round(r2, 6) if np.isfinite(r2) else "nan"), tag])
                 fh.flush()
                 print(f"[{Path(mf).name}] [{model_type:7s}] g={g_eval} l={l_eval} "
-                      f"true={true_gl:.3f} meas={k:.3f} r2={r2:.3f} [{tag}]")
+                    f"true={true_gl:.3f} meas={k:.3f} r2={r2:.3f} [{tag}]")
 
     for fh, _ in csv_handles.values():
         fh.close()

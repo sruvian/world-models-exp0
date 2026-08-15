@@ -1,0 +1,89 @@
+import argparse, glob, re
+from pathlib import Path
+import numpy as np
+import pandas as pd
+
+
+def parse_seed(name):
+    name = str(name)
+    m = re.search(r"_seed(\d+)", name)
+    if m: return int(m.group(1))
+    m = re.search(r"WorldModel[A-Za-z]*_(\d+)_", name)
+    if m: return int(m.group(1))
+    return -1
+
+
+def load(csv_glob):
+    frames = []
+    for f in glob.glob(csv_glob):
+        df = pd.read_csv(f)
+        fn = Path(f).name.lower()
+        df["env"] = ("cartpole" if "cartpole" in fn
+                     else "driven" if "driven" in fn else "pendulum")
+        df["policy"] = "sparse" if "sparse" in fn else "noise"
+        frames.append(df)
+    if not frames:
+        return None
+    df = pd.concat(frames, ignore_index=True)
+    df["seed"] = df["checkpoint"].map(parse_seed)
+    for c in ("trained_mi", "random_mi", "gain", "gain_sd"):
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    return df
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--pattern", default="smile")
+    args = ap.parse_args()
+
+    folders = sorted(glob.glob(f"{args.pattern}_*/"))
+    arch_dfs = {}
+    for fold in folders:
+        arch = Path(fold.rstrip("/")).name.split("_")[-1]
+        if arch == "seed":
+            continue
+        df = load(f"{fold}/*.csv")
+        if df is not None:
+            arch_dfs[arch] = df
+    if not arch_dfs:
+        print("No SMILE data found."); return
+    pd.set_option("display.width", 200)
+
+    for arch, df in arch_dfs.items():
+        print("\n" + "=" * 88)
+        print(f"{arch.upper()}  —  InfoNCE MI dissociation (mean±SD across seeds)")
+        print("=" * 88)
+        for env in sorted(df["env"].unique()):
+            for policy in ["noise", "sparse"]:
+                sub = df[(df["env"] == env) & (df["policy"] == policy)]
+                if len(sub) == 0:
+                    continue
+                print(f"\n  --- {env} / {policy} ---")
+
+                params = sub[sub["is_control"] == 0]
+                ctrls = sub[sub["is_control"] == 1]
+
+                print("    PARAMETERS (claim: gain over random ≈ 0):")
+                for tgt, g in params.groupby("target"):
+                    gain_by_seed = g.groupby("seed")["gain"].mean()
+                    tmi = g.groupby("seed")["trained_mi"].mean()
+                    print(f"      {tgt:16s}: trained_MI={tmi.mean():.3f}  "
+                          f"gain={gain_by_seed.mean():+.4f} ± {gain_by_seed.std():.4f} "
+                          f"(n_seeds={len(gain_by_seed)})")
+
+                print("    OBSERVABLES (positive control — absolute MI should be high):")
+                for tgt, g in ctrls.groupby("target"):
+                    tmi = g.groupby("seed")["trained_mi"].mean()
+                    print(f"      {tgt:16s}: trained_MI={tmi.mean():.3f} ± {tmi.std():.3f} "
+                          f"(n_seeds={len(tmi)})")
+
+                if len(params) and len(ctrls):
+                    pgain = params["gain"].mean()
+                    cmi = ctrls["trained_mi"].mean()
+                    pmi = params["trained_mi"].mean()
+                    print(f"    => observable MI ≈ {cmi:.2f} nats vs parameter MI ≈ {pmi:.2f} nats "
+                          f"({cmi/max(pmi,1e-6):.0f}× gap); parameter gain ≈ {pgain:+.3f}")
+
+
+if __name__ == "__main__":
+    main()
