@@ -128,37 +128,7 @@ def phaselag_readout(omegas, lags):
     w_steep = float(o[np.argmin(dlag)])
     swing = float(lg.max() - lg.min())
     return w_steep, swing
-def estimate_damping_from_energy(model, g, l, dt, horizon=1500, device="cpu"):
-    """
-    Behavioural damping readout via energy decay.
-    Free rollout (zero action, no drive injection). Energy of a damped pendulum
-    decays ~ exp(-2 b t). Fit log-envelope to recover b_eff, compare to true b.
-    """
-    model.eval()
-    gl = g / l
-    s0 = make_s0_driven(theta0=1.0, device=device)   # large-ish start, at rest
-    with torch.inference_mode():
-        preds = []
-        comp = model.encode_computational(s0)
-        for k in range(horizon):
-            a0 = torch.zeros(s0.shape[0], 1, device=device)
-            comp = model.step_computational(comp, a0)
-            preds.append(model.decode_computational(comp))
-        preds = torch.stack(preds, dim=1)
-    if not torch.isfinite(preds).all():
-        return float("nan")
-    theta = torch.atan2(preds[0, :, 1], preds[0, :, 0]).cpu().numpy()
-    thetadot = preds[0, :, 2].cpu().numpy()
-    E = 0.5 * thetadot**2 + gl * (1.0 - np.cos(theta))
-    E = np.maximum(E, 1e-8)
-    t = np.arange(len(E)) * dt
-    # linear fit of log E vs t -> slope = -2 b_eff
-    good = E > 1e-6
-    if good.sum() < 10:
-        return float("nan")
-    slope = np.polyfit(t[good], np.log(E[good]), 1)[0]
-    b_eff = -slope / 2.0
-    return float(b_eff)
+
 
 def estimate_effective_params_driven(model, states, actions, dt, device="cpu"):
     model.eval()
@@ -234,9 +204,7 @@ if __name__ == "__main__":
             if hdr:
                 w.writerow(["checkpoint", "model_type", "latent_dim", "k", "regime",
                             "eval_g", "eval_l", "true_omega0", "true_gl",
-                            # one-step joint readout
                             "meas_gl", "meas_b", "meas_A", "onestep_r2",
-                            # resonance readout
                             "w_steep", "swing", "amp_peak", "peakiness", "config_tag"])
             csv_handles[group] = (fh, w)
         fh, w = csv_handles[group]
@@ -267,7 +235,6 @@ if __name__ == "__main__":
                     model, g_eval, l_eval, args.dt,
                     horizon=args.horizon, transient=args.transient,
                     n_omega=args.n_omega, device=args.device)
-                b_eff = estimate_damping_from_energy(model, g_eval, l_eval, args.dt, horizon = args.horizon)
                 tag = "in_range" if (g_eval, l_eval) in DRIVEN_CONFIGS else "held_out"
                 w.writerow([Path(mf).name, model_type, cfg["latent"], cfg["k"], cfg["regime"],
                             g_eval, l_eval, round(true_omega0, 6), round(true_gl, 6),
@@ -285,7 +252,7 @@ if __name__ == "__main__":
                       f"peakiness={peakiness:.2f}")
                 print(f"[{Path(mf).name}] [{model_type:7s}] g={g_eval} l={l_eval} "
                 f"true_gl={true_gl:.3f} meas_gl={res['g_over_l']:.3f} "
-                f"meas_b={res['b']:.3f} meas_A={res['A']:.3f} r2={res['r2']:.3f} b_eff={b_eff:.4f}")
+                f"meas_b={res['b']:.3f} meas_A={res['A']:.3f} r2={res['r2']:.3f}")
                 
 
     for fh, _ in csv_handles.values():
