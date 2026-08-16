@@ -88,19 +88,21 @@ def compute_mi(train_z, train_target, neighbours=5, n_sub=5000, n_perm=5, seed=0
 
 def run_probe(train_z: np.ndarray, val_z: np.ndarray,
               train_target: np.ndarray, val_target: np.ndarray,
-              label: str, writer, meta: dict, alpha: float, neighbours: int, perm: int) -> tuple[float, float, float]:
+              label: str, writer, meta: dict, alpha: float, neighbours: int, perm: int) -> tuple[float, float, 
+                                                                                                #  float
+                                                                                                 ]:
 
     if not np.isfinite(train_z).all() or not np.isfinite(val_z).all():
         print(f"{label}: SKIPPED (NaN/inf in latents)")
-        return float('nan'), float('nan'), float('nan')
+        return float('nan'), float('nan')#, float('nan')
 
     if np.abs(train_z).max() > 1e4:
         print(f"{label}: SKIPPED (latent explosion > 1e4)")
-        return float('nan'), float('nan'), float('nan')
+        return float('nan'), float('nan')#, float('nan')
     probe = Ridge(alpha=alpha)
     probe.fit(train_z, train_target)
     r2 = r2_score(val_target, probe.predict(val_z))
-    mi_mean, mi_max, perm, perm_max = compute_mi(train_z, train_target, neighbours, n_perm=perm)
+    # mi_mean, mi_max, perm, perm_max = compute_mi(train_z, train_target, neighbours, n_perm=perm)
 
     shuffled = train_target.copy()
     np.random.shuffle(shuffled)
@@ -108,15 +110,15 @@ def run_probe(train_z: np.ndarray, val_z: np.ndarray,
     probe_shuffled.fit(train_z, shuffled)
     r2_shuffled = r2_score(val_target, probe_shuffled.predict(val_z))
     delta = r2 - r2_shuffled
-    shuf_mi = mi_max/perm_max
-    print(f"{label}: R2={r2:.4f} | shuffled={r2_shuffled:.4f} | delta={delta:.4f} | MI={mi_mean:.4f}|MI max={mi_max:.4f}| Perm={perm:.4f}| Perm Max={perm_max:.4f}| Shuff={shuf_mi:.4f}")
+    # shuf_mi = mi_max/perm_max
+    # print(f"{label}: R2={r2:.4f} | shuffled={r2_shuffled:.4f} | delta={delta:.4f} | MI={mi_mean:.4f}|MI max={mi_max:.4f}| Perm={perm:.4f}| Perm Max={perm_max:.4f}| Shuff={shuf_mi:.4f}")
     
     writer.writerow([
         meta["checkpoint"], meta["config"], meta["latent"], meta["k"],
-        label, round(r2, 4), round(r2_shuffled, 4), round(delta, 4), round(mi_mean, 4), round(mi_max, 4), round(perm, 4), round(perm_max, 4), round(shuf_mi, 4)
+        label, round(r2, 4), round(r2_shuffled, 4), round(delta, 4), #round(mi_mean, 4), round(mi_max, 4), round(perm, 4), round(perm_max, 4), round(shuf_mi, 4)
     ])
 
-    return r2, r2_shuffled, mi_mean
+    return r2, r2_shuffled#, mi_mean
 
 
 def _build_probe_targets(states, params_arr, env_name, probe_targets,
@@ -224,7 +226,8 @@ if __name__ == "__main__":
         writer = csv.writer(csv_file)
         if write_header:
             writer.writerow(["checkpoint", "config", "latent_dim", "k", "target",
-                             "r2", "r2_shuffled", "delta", "mi_mean", "mi_max", "perm", "perm_max", "mi_shuf_ratio"])
+                             "r2", "r2_shuffled", "delta"#, "mi_mean", "mi_max", "perm", "perm_max", "mi_shuf_ratio"
+                             ])
 
         for mf in files:
             cfg = parse_model(Path(mf))
