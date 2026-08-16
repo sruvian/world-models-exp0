@@ -32,11 +32,11 @@ def _normalize_regime(cfg):
     return cfg
 
 
-def _get_latents_and_targets(model, states, params_list, probe_targets, cfg, representation, roll):
+def _get_latents_and_targets(model, states, params_list, probe_targets, cfg, representation, roll, probe_target):
     train_z, _val_z, train_t, _val_t = stratified_probe_split(
         model, states, params_list, cfg["env"], probe_targets,
         regime=cfg["regime"], hold_param=cfg.get("hold_param"),
-        representation=representation, roll=roll)
+        representation=representation, roll=roll, probe_target= probe_target)
     return train_z, train_t
 
 
@@ -50,7 +50,7 @@ if __name__ == "__main__":
     ap.add_argument("--n_sub", type=int, default=20000)
     ap.add_argument("--steps", type=int, default=3000)
     ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
-    ap.add_argument("--clips", type=float, nargs="+", default=[1.0, 5.0, 10.0])
+    ap.add_argument("--probe_target", type = str, default = "h")
 
     args = ap.parse_args()
 
@@ -70,9 +70,9 @@ if __name__ == "__main__":
         states, params_list, probe_targets = get_data(cfg)
 
         z_tr, t_tr = _get_latents_and_targets(model,    states, params_list, probe_targets,
-                                              cfg, args.representation, args.roll)
+                                              cfg, args.representation, args.roll, args.probe_target)
         z_rd, _t_rd = _get_latents_and_targets(rand_mod, states, params_list, probe_targets,
-                                               cfg, args.representation, args.roll)
+                                               cfg, args.representation, args.roll, args.probe_target)
 
         n = z_tr.shape[0]
         if n > args.n_sub:
@@ -88,7 +88,7 @@ if __name__ == "__main__":
                   "will be uninterpretable; check probe_targets.")
 
         results = mi_dissociation(z_tr_s, z_rd_s, targets,
-                                  clip_sweep=tuple(args.clips), seeds=tuple(args.seeds),
+                                  seeds=tuple(args.seeds),
                                   steps=args.steps, device=args.device)
 
         env_tag = ENV_NAMES[cfg["env"]]
