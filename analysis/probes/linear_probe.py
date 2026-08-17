@@ -111,7 +111,7 @@ def run_probe(train_z: np.ndarray, val_z: np.ndarray,
     r2_shuffled = r2_score(val_target, probe_shuffled.predict(val_z))
     delta = r2 - r2_shuffled
     # shuf_mi = mi_max/perm_max
-    # print(f"{label}: R2={r2:.4f} | shuffled={r2_shuffled:.4f} | delta={delta:.4f} | MI={mi_mean:.4f}|MI max={mi_max:.4f}| Perm={perm:.4f}| Perm Max={perm_max:.4f}| Shuff={shuf_mi:.4f}")
+    print(f"{label}: R2={r2:.4f} | shuffled={r2_shuffled:.4f} | delta={delta:.4f}")
     
     writer.writerow([
         meta["checkpoint"], meta["config"], meta["latent"], meta["k"],

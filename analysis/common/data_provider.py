@@ -62,12 +62,12 @@ def _collect(env, params, seed=100, n_traj=None, steps=None,
              policy_seed=None, impulse=False, max_action=10.0):
     env_obj = make_env_from_params(env, params, seed=seed, max_action=max_action)
     s, a, _ = collect_trajectories(
-        env_obj,
-        n_traj or COLLECTOR["num_trajectories"],
-        steps or COLLECTOR["episode_time"],
-        policy_seed or COLLECTOR["policy_seed"],
-        COLLECTOR["save"],
-        impulse,
+        env = env_obj,
+        num_trajectories=n_traj or COLLECTOR["num_trajectories"],
+        episode_time= steps or COLLECTOR["episode_time"],
+        policy_seed = policy_seed or COLLECTOR["policy_seed"],
+        save = COLLECTOR["save"],
+        impulse_policy=impulse,
     )
     return torch.from_numpy(s).float(), torch.from_numpy(a).float()
 

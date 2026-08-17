@@ -8,7 +8,7 @@ WRAP_SWING = 300.0
 NUMERIC = ["true_omega0", "true_gl", "meas_gl", "meas_b", "meas_A",
            "onestep_r2", "w_steep", "swing", "amp_peak", "peakiness"]
 
-
+   
 def parse_seed(name):
     name = str(name)
     m = re.search(r"_seed(\d+)", name)
@@ -86,26 +86,28 @@ def main():
                 sub = tr[(tr["env"] == env) & (tr["policy"] == policy)]
                 if len(sub) == 0:
                     continue
-                good = sub[sub["onestep_r2"] >= args.min_r2]
-                if len(good) == 0:
-                    continue
-                slopes, rs = per_seed(good, "true_gl", "meas_gl")
-                b_by_seed = good.groupby("seed")["meas_b"].mean()
-                A_by_seed = good.groupby("seed")["meas_A"].mean()
-                r2m = good["onestep_r2"].mean()
-                rsub = rd[(rd["env"] == env) & (rd["policy"] == policy)
-                          & (rd["onestep_r2"] >= args.min_r2)]
-                rslopes, _ = per_seed(rsub, "true_gl", "meas_gl")
-
                 print(f"\n  {arch.upper()} / {env} / {policy}:")
-                if len(slopes) >= 3:
-                    print(f"    g/l slope = {slopes.mean():.3f} ± {slopes.std():.3f}  "
-                          f"r = {rs.mean():.3f}  (n_seeds={len(slopes)}, mean_R2={r2m:.3f})")
-                else:
-                    s, r = fit_slope(good["true_gl"].values, good["meas_gl"].values)
-                    print(f"    g/l slope = {s:.3f} (pooled, n_seeds<3) r={r:.3f} mean_R2={r2m:.3f}")
-                print(f"    b   = {b_by_seed.mean():.3f} ± {b_by_seed.std():.3f}   "
-                      f"A = {A_by_seed.mean():.3f} ± {A_by_seed.std():.3f}")
+                for k_val in sorted(sub["k"].unique()):
+                    ksub = sub[(sub["k"] == k_val) & (sub["onestep_r2"] >= args.min_r2)]
+                    if len(ksub) == 0:
+                        continue
+                    slopes, rs = per_seed(ksub, "true_gl", "meas_gl")
+                    b_by_seed = ksub.groupby("seed")["meas_b"].mean()
+                    A_by_seed = ksub.groupby("seed")["meas_A"].mean()
+                    r2m = ksub["onestep_r2"].mean()
+                    rsub = rd[(rd["env"] == env) & (rd["policy"] == policy)
+                            & (rd["k"] == k_val) & (rd["onestep_r2"] >= args.min_r2)]
+                    rslopes, _ = per_seed(rsub, "true_gl", "meas_gl")
+                    if len(slopes) >= 3:
+                        print(f"    k={k_val:2d}: g/l slope = {slopes.mean():.3f} ± {slopes.std():.3f}  "
+                            f"r={rs.mean():.3f}  b={b_by_seed.mean():.3f}±{b_by_seed.std():.3f}  "
+                            f"A={A_by_seed.mean():.3f}  (n_seeds={len(slopes)}, R2={r2m:.3f}, "
+                            f"rand_slope={rslopes.mean() if len(rslopes) else float('nan'):.3f})")
+                    else:
+                        s, r = fit_slope(ksub["true_gl"].values, ksub["meas_gl"].values)
+                        print(f"    k={k_val:2d}: g/l slope={s:.3f} (pooled, n_seeds<3) r={r:.3f}")
+                        print(f"    b   = {b_by_seed.mean():.3f} ± {b_by_seed.std():.3f}   "
+                            f"A = {A_by_seed.mean():.3f} ± {A_by_seed.std():.3f}")
                 if len(rslopes) >= 1:
                     print(f"    random-null g/l slope = {rslopes.mean():.3f} ± {rslopes.std():.3f} "
                           f"(should be ~0)")
@@ -120,29 +122,27 @@ def main():
                 base = df[(df["env"] == env) & (df["policy"] == policy)]
                 if len(base) == 0:
                     continue
-                # report k=1 wrapping incidence before filtering
-                k1 = base[base["k"] == 1]
-                n_wrap = int((base["swing"] > WRAP_SWING).sum())
-                clean = base[base["swing"] <= WRAP_SWING]
-
-                tr = clean[clean["model_type"] == "trained"]
-                rd = clean[clean["model_type"] == "random"]
-                if len(tr) == 0:
-                    continue
-
-                slopes, rs = per_seed(tr, "true_omega0", "w_steep")
-                tr_swing = tr.groupby("seed")["swing"].mean()
-                rd_swing = rd.groupby("seed")["swing"].mean() if len(rd) else pd.Series([np.nan])
-
-                print(f"\n  {arch.upper()} / {env} / {policy}:  "
-                      f"(filtered {n_wrap} wrapping rows; {len(k1)} k=1 rows present)")
-                if len(slopes) >= 3:
-                    print(f"    w_steep vs √(g/l): slope={slopes.mean():.3f}±{slopes.std():.3f} "
-                          f"r={rs.mean():.3f}  -> {'TRACKS' if abs(rs.mean())>0.8 else 'does NOT track'}")
-                else:
-                    s, r = fit_slope(tr["true_omega0"].values, tr["w_steep"].values)
-                    print(f"    w_steep vs √(g/l): slope={s:.3f} r={r:.3f} (pooled)"
-                          f"  -> {'TRACKS' if abs(r)>0.8 else 'does NOT track'}")
+                print(f"\n  {arch.upper()} / {env} / {policy}:")
+                for k_val in sorted(base["k"].unique()):
+                    kbase = base[base["k"] == k_val]
+                    n_wrap = int((kbase["swing"] > WRAP_SWING).sum())
+                    clean = kbase[kbase["swing"] <= WRAP_SWING]
+                    tr = clean[clean["model_type"] == "trained"]
+                    rd = clean[clean["model_type"] == "random"]
+                    if len(tr) == 0:
+                        print(f"    k={k_val:2d}: no trained rows survive wrap filter "
+                            f"({n_wrap} wrapping) — resonance undefined at this k")
+                        continue
+                    slopes, rs = per_seed(tr, "true_omega0", "w_steep")
+                    tr_swing = tr.groupby("seed")["swing"].mean()
+                    rd_swing = rd.groupby("seed")["swing"].mean() if len(rd) else pd.Series([np.nan])
+                    if len(slopes) >= 3:
+                        verdict = "TRACKS" if (abs(rs.mean()) > 0.9 and slopes.std() < 0.25) else "does NOT track"
+                        print(f"    k={k_val:2d}: w_steep vs √(g/l) slope={slopes.mean():.3f}±{slopes.std():.3f} "
+                            f"r={rs.mean():.3f} -> {verdict}  |  swing tr={tr_swing.mean():.0f}° "
+                            f"rd={rd_swing.mean():.0f}°  ({n_wrap} wrapped)")
+                    else:
+                        print(f"    k={k_val:2d}: n_seeds<3 after filter ({n_wrap} wrapped) — insufficient")
                 print(f"    swing: trained={tr_swing.mean():.1f}°±{tr_swing.std():.1f}  "
                       f"random={rd_swing.mean():.1f}°  "
                       f"(gap = learned frequency structure)")

@@ -60,29 +60,31 @@ def main():
                     continue
                 print(f"\n  --- {env} / {policy} ---")
 
-                params = sub[sub["is_control"] == 0]
-                ctrls = sub[sub["is_control"] == 1]
-
-                print("    PARAMETERS (claim: gain over random ≈ 0):")
-                for tgt, g in params.groupby("target"):
-                    gain_by_seed = g.groupby("seed")["gain"].mean()
-                    tmi = g.groupby("seed")["trained_mi"].mean()
-                    print(f"      {tgt:16s}: trained_MI={tmi.mean():.3f}  "
-                          f"gain={gain_by_seed.mean():+.4f} ± {gain_by_seed.std():.4f} "
-                          f"(n_seeds={len(gain_by_seed)})")
-
-                print("    OBSERVABLES (positive control — absolute MI should be high):")
-                for tgt, g in ctrls.groupby("target"):
-                    tmi = g.groupby("seed")["trained_mi"].mean()
-                    print(f"      {tgt:16s}: trained_MI={tmi.mean():.3f} ± {tmi.std():.3f} "
-                          f"(n_seeds={len(tmi)})")
-
-                if len(params) and len(ctrls):
-                    pgain = params["gain"].mean()
-                    cmi = ctrls["trained_mi"].mean()
-                    pmi = params["trained_mi"].mean()
-                    print(f"    => observable MI ≈ {cmi:.2f} nats vs parameter MI ≈ {pmi:.2f} nats "
-                          f"({cmi/max(pmi,1e-6):.0f}× gap); parameter gain ≈ {pgain:+.3f}")
+                for k_val in sorted(sub["k"].unique()):
+                    ksub = sub[sub["k"] == k_val]
+                    params = ksub[ksub["is_control"] == 0]
+                    ctrls = ksub[ksub["is_control"] == 1]
+                    if len(params) == 0 and len(ctrls) == 0:
+                        continue
+                    print(f"\n    k={k_val}:")
+                    print("      PARAMETERS (claim: gain over random ≈ 0):")
+                    for tgt, g in params.groupby("target"):
+                        gain_by_seed = g.groupby("seed")["gain"].mean()
+                        tmi = g.groupby("seed")["trained_mi"].mean()
+                        print(f"        {tgt:16s}: trained_MI={tmi.mean():.3f}  "
+                              f"gain={gain_by_seed.mean():+.4f} ± {gain_by_seed.std():.4f} "
+                              f"(n_seeds={len(gain_by_seed)})")
+                    print("      OBSERVABLES (positive control — absolute MI high):")
+                    for tgt, g in ctrls.groupby("target"):
+                        tmi = g.groupby("seed")["trained_mi"].mean()
+                        print(f"        {tgt:16s}: trained_MI={tmi.mean():.3f} ± {tmi.std():.3f} "
+                              f"(n_seeds={len(tmi)})")
+                    if len(params) and len(ctrls):
+                        pgain = params["gain"].mean()
+                        cmi = ctrls["trained_mi"].mean()
+                        pmi = params["trained_mi"].mean()
+                        print(f"      => obs MI ≈ {cmi:.2f} vs param MI ≈ {pmi:.2f} "
+                              f"({cmi/max(pmi,1e-6):.0f}× gap); param gain ≈ {pgain:+.3f}")
 
 
 if __name__ == "__main__":

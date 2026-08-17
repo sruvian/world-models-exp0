@@ -68,24 +68,27 @@ def main():
                 obs = [t for t in targets if t in OBSERVABLES]
                 par = [t for t in targets if t not in OBSERVABLES]
 
-                def stat(tgt, is_rand):
-                    rows = sub[(sub["target"] == tgt) & (sub["is_random"] == is_rand)]
-                    by_seed = rows.groupby("seed")["r2"].mean()
-                    return by_seed.mean(), by_seed.std(), len(by_seed)
+                for k_val in sorted(sub["k"].unique()):
+                    ksub = sub[sub["k"] == k_val]
+                    print(f"\n    k={k_val}:")
+                    def stat(tgt, is_rand):
+                        rows = ksub[(ksub["target"] == tgt) & (ksub["is_random"] == is_rand)]
+                        by_seed = rows.groupby("seed")["r2"].mean()
+                        return by_seed.mean(), by_seed.std(), len(by_seed)
 
-                print("    OBSERVABLES (decode high from both encoders):")
-                for t in obs:
-                    tm, ts, n = stat(t, False)
-                    rm, rs, _ = stat(t, True)
-                    print(f"      {t:14s}: trained R²={tm:.3f}±{ts:.3f}  random R²={rm:.3f}  (n_seeds={n})")
+                    print("    OBSERVABLES (decode high from both encoders):")
+                    for t in obs:
+                        tm, ts, n = stat(t, False)
+                        rm, rs, _ = stat(t, True)
+                        print(f"      {t:14s}: trained R²={tm:.3f}±{ts:.3f}  random R²={rm:.3f}  (n_seeds={n})")
 
-                print("    PARAMETERS (claim: floored, gain over random ≈ 0):")
-                for t in par:
-                    tm, ts, n = stat(t, False)
-                    rm, rs, _ = stat(t, True)
-                    gain = tm - rm
-                    print(f"      {t:14s}: trained R²={tm:.3f}±{ts:.3f}  random R²={rm:.3f}  "
-                          f"gain={gain:+.3f}  (n_seeds={n})")
+                    print("    PARAMETERS (claim: floored, gain over random ≈ 0):")
+                    for t in par:
+                        tm, ts, n = stat(t, False)
+                        rm, rs, _ = stat(t, True)
+                        gain = tm - rm
+                        print(f"      {t:14s}: trained R²={tm:.3f}±{ts:.3f}  random R²={rm:.3f}  "
+                            f"gain={gain:+.3f}  (n_seeds={n})")
 
 
 if __name__ == "__main__":
