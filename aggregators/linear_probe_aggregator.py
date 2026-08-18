@@ -21,7 +21,6 @@ DEGENERATE = {
 
 
 def infer_regime(row):
-    """Regime from the checkpoint name (holdg / holdl / combined)."""
     s = str(row.get("checkpoint", "")).lower()
     for r in ("holdg", "holdl", "combined"):
         if r in s:

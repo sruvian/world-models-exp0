@@ -27,6 +27,13 @@ ARCH_OVERRIDES = {
         "checkpointing.save_path": "model_saves_gru",
         "checkpointing.logbase_dir": "logfiles_gru",
     },
+    "dmd_reg": {
+        "model.name": "WorldModelDMD",
+        "model.hidden_dim": 128,
+        "hyperparams.reg": True,
+        "checkpointing.save_path": "model_saves_dmd_reg",
+        "checkpointing.logbase_dir": "logfiles_dmd_reg",
+    },
 }
 
 
@@ -42,9 +49,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input_dir", default="cartpole_base")
     ap.add_argument("--output_dir", default="cartpole_generated")
-    ap.add_argument("--archs", nargs="+", default=["rssm"])
-    ap.add_argument("--latents", nargs="+", type=int, default=[ 16])
-    ap.add_argument("--rollouts", nargs="+", type=int, default=[ 15])
+    ap.add_argument("--archs", nargs="+", default=["mlp", "rssm"])
+    ap.add_argument("--latents", nargs="+", type=int, default=[16, 32])
+    ap.add_argument("--rollouts", nargs="+", type=int, default=[15, 50])
     ap.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2, 3, 4])
     args = ap.parse_args()
 

@@ -56,3 +56,9 @@ test
 *_yamls
 !trainer_yamls
 windowed
+*_seeds
+smile*
+resonance*
+dmd_ig
+dmd_probe
+test.py

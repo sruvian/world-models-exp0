@@ -25,6 +25,9 @@ CHANGES = {
     # "checkpointing.save_path": "model_saves_rssm",
     # "checkpointing.logbase_dir": "logfiles_rssm",
     # "model.name": "WorldModelRSSM"
+    # "datasets.windowed_cache": None,
+    # "hyperparams.transient": 0,
+    # "hyperparams.windows_per_traj": 1
 }
 
 def set_nested(config, dotted_key, value):

@@ -50,7 +50,7 @@ rollout_engine:
 
 # Hyperparameters
 hyperparams:
-  transient: 1500
+  transient: 0
   windows_per_traj: 1
   lam: 1.0
   reg: false
