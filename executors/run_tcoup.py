@@ -21,6 +21,15 @@ HELDOUT_CONFIGS = [
     (15, 0.5),
 ]
 SWEEP_CONFIGS = TRAIN_CONFIGS + HELDOUT_CONFIGS
+def _predict_traj(checker, states, actions):
+    n_traj, T, _ = states.shape
+    preds = []
+    with torch.no_grad():
+        for t0 in range(T - 1):
+            z = checker.encode(states[:, t0, :])
+            a = actions[:, t0].unsqueeze(-1)
+            preds.append(checker.decode(checker.step(z, a)))
+    return torch.stack(preds, dim=1)
 
 def _config_params(env_name, g, l):
     p = {"gravity": g, "length": l, "mass1": 1.0, "dt": 0.01,
@@ -39,41 +48,34 @@ def tag_config(g, l):
         return "extrapolated"
     return "interpolated"
 
-def _predict_traj(checker, states, actions):
-    n_traj, T, _ = states.shape
-    preds = []
-    with torch.no_grad():
-        for t0 in range(T - 1):
-            z = checker.encode(states[:, t0, :])
-            a = actions[:, t0].unsqueeze(-1)
-            preds.append(checker.decode(checker.step(z, a)))
-    return torch.stack(preds, dim=1)
+def estimate_translational_coupling(checker, states, actions, dt):
 
-
-def estimate_effective_gl(checker, states, actions, dt, env_name=""):
-    
     pred_traj = _predict_traj(checker, states, actions)
     if not torch.isfinite(pred_traj).all():
         return float("nan"), float("nan")
- 
-    theta = torch.arctan2(pred_traj[:, :, 1], pred_traj[:, :, 0])
-    theta_u = np.unwrap(theta.detach().numpy(), axis=1)
+
+    cos_th = pred_traj[:, :, 0].detach().numpy()
+    sin_th = pred_traj[:, :, 1].detach().numpy()
     thetadot = pred_traj[:, :, 2].detach().numpy()
+    x_dot = pred_traj[:, :, 4].detach().numpy()
+
+    x_ddot = np.gradient(x_dot, dt, axis=1, edge_order=1)
+
     theta_ddot = np.gradient(thetadot, dt, axis=1, edge_order=1)
-    sin_th = np.sin(theta_u)
- 
-    if not (np.isfinite(theta_ddot).all() and np.isfinite(sin_th).all()):
+
+    r = (thetadot ** 2) * sin_th - theta_ddot * cos_th
+
+    a = actions[:, :-1].detach().numpy() if torch.is_tensor(actions) else np.asarray(actions)[:, :-1]
+
+    finite = np.isfinite(x_ddot).all() and np.isfinite(r).all()
+    if not finite:
         return float("nan"), float("nan")
- 
-    is_cartpole = "cartpole" in str(env_name).lower()
-    regressor = (sin_th if is_cartpole else -sin_th)
- 
-    X = regressor.reshape(-1, 1)
-    y = theta_ddot.reshape(-1, 1)
+
+    X = r.reshape(-1, 1)
+    y = x_ddot.reshape(-1)
     reg = LinearRegression().fit(X, y)
-    return float(reg.coef_[0][0]), float(reg.score(X, y))
-
-
+    coupling_coeff = float(reg.coef_[0])
+    return coupling_coeff, float(reg.score(X, y))
 
 def _supports_random_init():
     return False
@@ -107,7 +109,7 @@ if __name__ == "__main__":
 
     for mf in model_files:
         cfg = parse_model(Path(mf))
-        if cfg["env"] == "DrivenPendulumSim":
+        if cfg["env"] != "CartPoleSim":
             continue
 
         if mf not in model_cache:
@@ -128,7 +130,7 @@ if __name__ == "__main__":
             w = csv.writer(fh)
             if hdr:
                 w.writerow(["checkpoint", "model_type", "latent_dim", "k", "regime",
-                            "eval_g", "eval_l", "true_gl", "measured_gl", "r2", "config_tag"])
+                            "eval_g", "eval_l", "true_coupling", "measured_coupling", "r2", "config_tag"])
             csv_handles[group] = (fh, w)
         fh, w = csv_handles[group]
 
@@ -148,16 +150,16 @@ if __name__ == "__main__":
                 actions = actions if torch.is_tensor(actions) else torch.from_numpy(actions)
                 states, actions = states.float(), actions.float()
 
-                k, r2 = estimate_effective_gl(checker, states, actions, args.dt, cfg["env"])
-                true_gl = g_eval / l_eval
+                k, r2 = estimate_translational_coupling(checker, states, actions, args.dt)
+                true_coupling = (0.1*l_eval*0.5)/(1.1)
                 tag = tag_config(g_eval, l_eval)
                 w.writerow([Path(mf).name, model_type, cfg["latent"], cfg["k"], cfg["regime"],
-                            g_eval, l_eval, round(true_gl, 6),
+                            g_eval, l_eval, round(true_coupling, 6),
                             (round(k, 6)  if np.isfinite(k)  else "nan"),
                             (round(r2, 6) if np.isfinite(r2) else "nan"), tag])
                 fh.flush()
                 print(f"[{Path(mf).name}] [{model_type:7s}] g={g_eval} l={l_eval} "
-                    f"true={true_gl:.3f} meas={k:.3f} r2={r2:.3f} [{tag}]")
+                    f"true={true_coupling:.3f} meas={k:.3f} r2={r2:.3f} [{tag}]")
 
     for fh, _ in csv_handles.values():
         fh.close()

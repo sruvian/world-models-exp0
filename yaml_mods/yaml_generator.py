@@ -49,9 +49,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input_dir", default="cartpole_base")
     ap.add_argument("--output_dir", default="cartpole_generated")
-    ap.add_argument("--archs", nargs="+", default=["mlp", "rssm"])
+    ap.add_argument("--archs", nargs="+", default=["mlp", "rssm", "dmd_reg"])
     ap.add_argument("--latents", nargs="+", type=int, default=[16, 32])
-    ap.add_argument("--rollouts", nargs="+", type=int, default=[15, 50])
+    ap.add_argument("--rollouts", nargs="+", type=int, default=[1])
     ap.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2, 3, 4])
     args = ap.parse_args()
 
