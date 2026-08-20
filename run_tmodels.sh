@@ -9,7 +9,12 @@ MAX_JOBS=$(( $(nproc) - 2 ))
 PYTHON="$HOME/world-models-exp0/WSim/bin/python"
 [ -x "$PYTHON" ] || { echo "no python at $PYTHON"; exit 1; }
 
-mapfile -t yamls < <(find "$YAML_DIR" -name "*.yaml" | sort -r)
+mapfile -t yamls < <(
+  find "$YAML_DIR" -name "*.yaml" |
+  sed -E 's/.*_(k[0-9]+)_.*/\1 &/' |
+  sort -k1,1 |
+  cut -d' ' -f2-
+)
 echo "Found ${#yamls[@]} YAMLs | $MAX_JOBS workers"
 
 for yaml in "${yamls[@]}"; do
