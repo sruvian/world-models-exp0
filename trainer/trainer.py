@@ -180,12 +180,13 @@ def rollout_loss(model: WorldModel | ProtocolAModel| ProtocolBModel, states: tor
     K = states.shape[1]
     z = model.encode(states[:, 0, :])
     total_loss = torch.zeros(1, device=device)
+    w = torch.tensor([rollout_func(K,k) for k in range(K)], dtype =torch.float64, device=device)
+    w = w / w.mean()
     for k in range(K):
         a_k = actions[:, k].unsqueeze(-1)
         z = model.step(z, a_k)
         s_hat = model.decode(z)
-        weight = rollout_func(K, k)
-        total_loss += weight * loss_func(s_hat, next_states[:, k, :])
+        total_loss += w[k] * loss_func(s_hat, next_states[:, k, :])
     return total_loss
 
 def rollout_loss_dmd(model: WorldModelDMD, states: torch.Tensor, actions: torch.Tensor,
@@ -233,12 +234,13 @@ def rollout_loss_vae_val(model, states, actions, next_states,
     kl = -0.5 * (1 + log_var - mu.pow(2) - log_var.exp()).mean(dim=-1).mean()
     z = mu
     total_loss = torch.zeros(1, device=device)
+    w = torch.tensor([rollout_func(K,k) for k in range(K)], dtype =torch.float64, device=device)
+    w = w / w.mean()
     for k in range(K):
         a_k = actions[:, k].unsqueeze(-1)
         z = model.step(z, a_k)
         s_hat = model.decode(z)
-        weight = rollout_func(K, k)
-        total_loss += weight * loss_func(s_hat, next_states[:, k, :])
+        total_loss += w[k] * loss_func(s_hat, next_states[:, k, :])
     total_loss += beta * kl
     return total_loss
 
@@ -277,7 +279,8 @@ def rollout_loss_rssm(model, states, actions, next_states, loss_func, rollout_fu
     total_kl    = torch.zeros(1, device=device)
 
     beta_k = beta * min(1.0, step / warmup_steps)
-
+    w = torch.tensor([rollout_func(K,k) for k in range(K)], dtype =torch.float64, device=device)
+    w = w / w.mean()
     for k in range(K):
         a_k = actions[:, k].unsqueeze(-1)
         obs_next = next_states[:, k, :]
@@ -285,11 +288,10 @@ def rollout_loss_rssm(model, states, actions, next_states, loss_func, rollout_fu
         z_prior, mu_p, std_p = model.prior(h)
         z_post,  mu_q, std_q = model.posterior(h, obs_next)
         s_hat = model.decode(h, z_post)
-        weight = rollout_func(K, k)
-        total_recon += weight * loss_func(s_hat, obs_next)
+        total_recon += w[k] * loss_func(s_hat, obs_next)
         kl = kl_balanced(mu_q, std_q, mu_p, std_p)
         kl = torch.clamp(kl, min=free_nats / model.latent_dim).sum(dim=-1).mean()
-        total_kl += weight * kl
+        total_kl += w[k] * kl
         z = z_post
     return total_recon + beta_k * total_kl
 
@@ -302,7 +304,8 @@ def rollout_loss_rssm_val(model, states, actions, next_states,
     h, z = model.initial(B, device)
     z, mu_q, _ = model.posterior(h, states[:, 0, :])
     z = mu_q
-
+    w = torch.tensor([rollout_func(K,k) for k in range(K)], dtype =torch.float64, device=device)
+    w = w / w.mean()
     total = torch.zeros(1, device=device)
     for k in range(K):
         a_k = actions[:, k].unsqueeze(-1)
@@ -310,7 +313,7 @@ def rollout_loss_rssm_val(model, states, actions, next_states,
         z_prior, mu_p, std_p = model.prior(h)
         z = mu_p
         s_hat = model.decode(h, z)
-        total += rollout_func(K, k) * loss_func(s_hat, next_states[:, k, :])
+        total += w[k] * loss_func(s_hat, next_states[:, k, :])
     return total
 
 def lin_dec(K, k, gamma):
