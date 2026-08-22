@@ -59,14 +59,19 @@ def estimate_effective_gl(checker, states, actions, dt, env_name=""):
     theta = torch.arctan2(pred_traj[:, :, 1], pred_traj[:, :, 0])
     theta_u = np.unwrap(theta.detach().numpy(), axis=1)
     thetadot = pred_traj[:, :, 2].detach().numpy()
-    theta_ddot = np.gradient(thetadot, dt, axis=1, edge_order=1)
+    theta_ddot = np.gradient(thetadot, dt, axis=1, edge_order=2)
     sin_th = np.sin(theta_u)
  
     if not (np.isfinite(theta_ddot).all() and np.isfinite(sin_th).all()):
         return float("nan"), float("nan")
  
     is_cartpole = "cartpole" in str(env_name).lower()
+    if is_cartpole:
+        cos2_th = np.cos(theta_u)**2
+        denom = (4/3 - (0.091)*cos2_th)
+        sin_th = sin_th/denom
     regressor = (sin_th if is_cartpole else -sin_th)
+
  
     X = regressor.reshape(-1, 1)
     y = theta_ddot.reshape(-1, 1)

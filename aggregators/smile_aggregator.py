@@ -91,7 +91,7 @@ def main():
                             cmi = ctrls["trained_mi"].mean()
                             pmi = params["trained_mi"].mean()
                             print(f"      => obs MI ≈ {cmi:.2f} vs param MI ≈ {pmi:.2f} "
-                                f"({cmi/max(pmi,1e-6):.0f}× gap); param gain ≈ {pgain:+.3f}")
+                                f"({cmi/max(pmi,1e-6):.0f}x gap); param gain ≈ {pgain:+.3f}")
 
 
 if __name__ == "__main__":

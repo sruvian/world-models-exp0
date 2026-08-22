@@ -1,13 +1,23 @@
-import argparse
-import glob
+import argparse, glob, re
 from pathlib import Path
-
 import numpy as np
 import pandas as pd
 from scipy.stats import pearsonr
 
-SEEDED = {"seed"}
 TAG_ORDER = ["in_training", "interpolated", "extrapolated"]
+RECURRENT = {"gru", "rssm"}
+CARTPOLE_INERTIA = 1.555
+
+
+def parse_seed(checkpoint):
+    name = str(checkpoint)
+    m = re.search(r"_seed(\d+)", name)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"WorldModel[A-Za-z]*_(\d+)_", name)
+    if m:
+        return int(m.group(1))
+    return -1
 
 
 def load_arch(csv_glob):
@@ -21,11 +31,14 @@ def load_arch(csv_glob):
     if not frames:
         return None
     df = pd.concat(frames, ignore_index=True)
-    df = df.drop_duplicates(subset=["checkpoint", "eval_g", "eval_l", "env", "policy"])
+    df["seed"] = df["checkpoint"].map(parse_seed)
+    for c in ("true_coupling", "measured_coupling", "r2"):
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    df = df.drop_duplicates(subset=["checkpoint", "eval_g", "eval_l", "env", "policy", "model_type"])
     return df
 
 
-def fit_line(true, meas):
+def fit_slope(true, meas):
     if len(true) < 3 or np.std(true) < 1e-9:
         return np.nan, np.nan, np.nan
     slope, intercept = np.polyfit(true, meas, 1)
@@ -33,89 +46,100 @@ def fit_line(true, meas):
     return slope, intercept, r
 
 
+def per_seed_slopes(sub):
+    slopes, rs = [], []
+    for seed, g in sub.groupby("seed"):
+        s, _, r = fit_slope(g["true_coupling"].values, g["measured_coupling"].values)
+        if np.isfinite(s):
+            slopes.append(s); rs.append(r)
+    return np.array(slopes), np.array(rs)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pattern", default="tcoupling")
-    ap.add_argument("--min_r2", type=float, default=0.0,
-                    help="drop per-config estimates with fit R2 below this (unreliable)")
+    ap.add_argument("--min_r2", type=float, default=0.0)
     args = ap.parse_args()
 
     folders = sorted(glob.glob(f"{args.pattern}_*/"))
     arch_dfs = {}
     for fold in folders:
         arch = Path(fold.rstrip("/")).name.split("_")[-1]
-        if "seed" in arch:
+        if arch == "seed":
             continue
         df = load_arch(f"{fold}/*.csv")
         if df is not None:
             arch_dfs[arch] = df
-
     if not arch_dfs:
         print("No behavioural data found."); return
 
     pd.set_option("display.width", 200); pd.set_option("display.max_columns", 20)
 
-    RECURRENT = {"gru", "rssm"}
     for arch, df in arch_dfs.items():
-        print("\n" + "=" * 85)
-        print(f"{arch.upper()}  —  effective translational coupling")
-        print("=" * 85)
+        print("\n" + "=" * 90)
+        print(f"{arch.upper()}  —  effective translational coefficient tracking (slope mean±SD across seeds)")
+        print("=" * 90)
         for env in ["cartpole"]:
             for policy in ["noise", "sparse"]:
-                envdf = df[(df["env"] == env) & (df["policy"] == policy)]
+                envdf = df[(df["env"] == env) & (df["policy"] == policy)
+                           & (df["model_type"] == "trained")].copy()
                 if len(envdf) == 0:
                     continue
-                good = envdf[envdf["r2"] >= args.min_r2]
-                dropped = len(envdf) - len(good)
 
-                print(f"\n  --- {env} / {policy} ---")
-                if len(good) < 3:
-                    print(f"    insufficient reliable points (n={len(good)}, dropped {dropped})")
-                    continue
-                slope, intercept, r = fit_line(good["true_coupling"].values, good["measured_coupling"].values)
-                print(f"    OVERALL: slope={slope:.3f} intercept={intercept:+.3f} pearson_r={r:.3f}  "
-                      f"(n={len(good)}, dropped {dropped} low-R2)")
-                print(f"             mean|meas-true|={np.abs(good['measured_coupling']-good['true_coupling']).mean():.4f}  "
-                      f"mean_fit_R2={good['r2'].mean():.3f}")
-                print("    by config_tag:")
-                for tag in TAG_ORDER:
-                    sub = good[good["config_tag"] == tag]
-                    if len(sub) == 0:
+                for k_val in sorted(envdf["k"].unique()):
+                    kdf = envdf[envdf["k"] == k_val]
+                    good = kdf[kdf["r2"] >= args.min_r2]
+                    dropped = len(kdf) - len(good)
+                   
+                    print(f"\n  --- {env} / {policy} / k={k_val} ---")
+
+                    slopes, rs = per_seed_slopes(good)
+                    if len(slopes) < 3:
+                        s, i, r = fit_slope(good["true_coupling"].values, good["measured_coupling"].values)
+                        print(f"    insufficient seeds (n_seeds={len(slopes)}, dropped {dropped})"
+                              + (f"; pooled slope={s:.3f} r={r:.3f}" if np.isfinite(s) else ""))
                         continue
-                    s, i, rr = fit_line(sub["true_coupling"].values, sub["measured_coupling"].values)
-                    err = np.abs(sub["measured_coupling"] - sub["true_coupling"]).mean()
-                    print(f"      {tag:14s}: slope={s:.3f} r={rr:.3f} mean|err|={err:.4f} "
-                          f"mean_R2={sub['r2'].mean():.3f} (n={len(sub)})")
+                    print(f"    slope = {slopes.mean():.3f} ± {slopes.std():.3f}   "
+                          f"pearson_r = {rs.mean():.3f} ± {rs.std():.3f}   "
+                          f"(n_seeds={len(slopes)}, mean_fit_R2={good['r2'].mean():.3f}, dropped {dropped})")
+                    print(f"    mean|meas-true| = {np.abs(good['measured_coupling']-good['true_coupling']).mean():.4f}")
+                    print("    by config_tag:")
+                    for tag in TAG_ORDER:
+                        sub = good[good["config_tag"] == tag]
+                        if len(sub) == 0:
+                            continue
+                        tslopes, trs = per_seed_slopes(sub)
+                        err = np.abs(sub["measured_coupling"] - sub["true_coupling"]).mean()
+                        if len(tslopes) >= 3:
+                            print(f"      {tag:14s}: slope={tslopes.mean():.3f}±{tslopes.std():.3f} "
+                                  f"r={trs.mean():.3f} mean|err|={err:.4f} (n_seeds={len(tslopes)})")
+                        else:
+                            s, i, r = fit_slope(sub["true_coupling"].values, sub["measured_coupling"].values)
+                            print(f"      {tag:14s}: slope={s:.3f} (pooled) r={r:.3f} "
+                                  f"mean|err|={err:.4f} (n_pts={len(sub)})")
 
-    print("\n" + "=" * 85)
-    print("CROSS-ARCHITECTURE  —  CARTPOLE  TRAINED vs RANDOM (null control)")
-    print("=" * 85)
+    print("\n" + "=" * 90)
+    print("TRAINED vs RANDOM  (null control) — slope mean±SD across seeds, cartpole")
+    print("=" * 90)
     rows = {}
     for arch, df in arch_dfs.items():
-        pend = df[df["env"] == "cartpole"].copy()
-        pend["measured_coupling"] = pd.to_numeric(pend["measured_coupling"], errors="coerce")
-        pend["r2"] = pd.to_numeric(pend["r2"], errors="coerce")
-        has_type = "model_type" in pend.columns
-        for mtype in (["trained", "random"] if has_type else ["trained"]):
-            sub = pend[pend["model_type"] == mtype] if has_type else pend
-            good = sub[(sub["r2"] >= args.min_r2) & np.isfinite(sub["measured_coupling"])]
-            n_valid = len(good)
-            n_total = len(sub)
-            if n_valid < 3:
-                rows[f"{arch}/{mtype}"] = {
-                    "slope": np.nan, "r": np.nan, "mean_fit_r2": np.nan,
-                    "n_valid": n_valid, "n_total": n_total,
-                    "note": "no coherent translational coupling (null)" if mtype == "random" else "insufficient"}
-                continue
-            slope, _, r = fit_line(good["true_coupling"].values, good["measured_coupling"].values)
-            rows[f"{arch}/{mtype}"] = {
-                "slope": round(slope, 3), "r": round(r, 3),
-                "mean_fit_r2": round(good["r2"].mean(), 3),
-                "n_valid": n_valid, "n_total": n_total, "note": ""}
+        pend = df[df["env"] == "cartpole"]
+        for k_val in sorted(pend["k"].unique()):
+            for mtype in ["trained", "random"]:
+                sub = pend[(pend["model_type"] == mtype) & (pend["k"] == k_val)
+                           & (pend["r2"] >= args.min_r2)]
+                slopes, rs = per_seed_slopes(sub)
+                key = f"{arch}/k{k_val}/{mtype}"
+                if len(slopes) < 3:
+                    rows[key] = {
+                        "slope_mean": np.nan, "slope_sd": np.nan, "r_mean": np.nan,
+                        "n_seeds": len(slopes),
+                        "note": "no coherent translational coeff (null)" if mtype == "random" else "insufficient"}
+                else:
+                    rows[key] = {
+                        "slope_mean": round(slopes.mean(), 3), "slope_sd": round(slopes.std(), 3),
+                        "r_mean": round(rs.mean(), 3), "n_seeds": len(slopes), "note": ""}
     print(pd.DataFrame(rows).T.to_string())
-
-
-    print("\n[tracking data available per-config in the CSVs: true_coupling, measured_coupling, r2, config_tag]")
 
 
 if __name__ == "__main__":

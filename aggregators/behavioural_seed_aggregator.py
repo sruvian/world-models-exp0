@@ -96,7 +96,7 @@ def main():
                     dropped = len(kdf) - len(good)
                     notes = []
                     if env == "cartpole":
-                        notes.append("effective coeff (×2C∈[1.5,1.61])"
+                        notes.append("effective coeff (x2C∈[1.5,1.61])"
                                      + (" [corrected]" if args.cartpole_correct else " [RAW]"))
                     if policy == "sparse" and arch in RECURRENT:
                         notes.append("TIMING-CONFOUNDED")
@@ -129,11 +129,14 @@ def main():
                                   f"mean|err|={err:.4f} (n_pts={len(sub)})")
 
     print("\n" + "=" * 90)
-    print("TRAINED vs RANDOM  (null control) — slope mean±SD across seeds, pendulum")
+    if args.cartpole_correct:
+        print("TRAINED vs RANDOM  (null control) — slope mean±SD across seeds, cartpole")
+    else:
+        print("TRAINED vs RANDOM  (null control) — slope mean±SD across seeds, pendulum")
     print("=" * 90)
     rows = {}
     for arch, df in arch_dfs.items():
-        pend = df[df["env"] == "pendulum"]
+        pend = df[df["env"]=="cartpole" if args.cartpole_correct else df["env"] == "pendulum"]
         for k_val in sorted(pend["k"].unique()):
             for mtype in ["trained", "random"]:
                 sub = pend[(pend["model_type"] == mtype) & (pend["k"] == k_val)
