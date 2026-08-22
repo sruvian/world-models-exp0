@@ -59,9 +59,9 @@ def estimate_translational_coupling(checker, states, actions, dt):
     thetadot = pred_traj[:, :, 2].detach().numpy()
     x_dot = pred_traj[:, :, 4].detach().numpy()
 
-    x_ddot = np.gradient(x_dot, dt, axis=1, edge_order=1)
+    x_ddot = np.gradient(x_dot, dt, axis=1, edge_order=2)
 
-    theta_ddot = np.gradient(thetadot, dt, axis=1, edge_order=1)
+    theta_ddot = np.gradient(thetadot, dt, axis=1, edge_order=2)
 
     r = (thetadot ** 2) * sin_th - theta_ddot * cos_th
 
@@ -123,7 +123,7 @@ if __name__ == "__main__":
         env_tag = 'cartpole' if cfg['env'] == 'CartPoleSim' else 'pendulum'
         group = f"{env_tag}_{policy_tag}_{TAGS[cfg['model_name']]}"
         if group not in csv_handles:
-            path = Path(f"{args.save_dir}/behavioural_{group}.csv")
+            path = Path(f"{args.save_dir}/tcoupling_{group}.csv")
             path.parent.mkdir(parents=True, exist_ok=True)
             hdr = not path.exists()
             fh = open(path, "a", newline="")

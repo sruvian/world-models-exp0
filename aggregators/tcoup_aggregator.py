@@ -35,7 +35,7 @@ def fit_line(true, meas):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pattern", default="behavioural")
+    ap.add_argument("--pattern", default="tcoupling")
     ap.add_argument("--min_r2", type=float, default=0.0,
                     help="drop per-config estimates with fit R2 below this (unreliable)")
     args = ap.parse_args()
@@ -58,23 +58,17 @@ def main():
     RECURRENT = {"gru", "rssm"}
     for arch, df in arch_dfs.items():
         print("\n" + "=" * 85)
-        print(f"{arch.upper()}  —  effective g/l tracking (measured vs true)")
+        print(f"{arch.upper()}  —  effective translational coupling")
         print("=" * 85)
-        for env in ["pendulum", "cartpole"]:
+        for env in ["cartpole"]:
             for policy in ["noise", "sparse"]:
                 envdf = df[(df["env"] == env) & (df["policy"] == policy)]
                 if len(envdf) == 0:
                     continue
                 good = envdf[envdf["r2"] >= args.min_r2]
                 dropped = len(envdf) - len(good)
-                notes = []
-                if env == "cartpole":
-                    notes.append("NOT a true g/l -- cartpole isn't pure pendulum")
-                if policy == "sparse" and arch in RECURRENT:
-                    notes.append("TIMING-CONFOUNDED: period-scaled impulses can leak g/l "
-                                 "to a recurrent model via action timing")
-                note = ("   [" + "; ".join(notes) + "]") if notes else ""
-                print(f"\n  --- {env} / {policy} ---{note}")
+
+                print(f"\n  --- {env} / {policy} ---")
                 if len(good) < 3:
                     print(f"    insufficient reliable points (n={len(good)}, dropped {dropped})")
                     continue
@@ -94,11 +88,11 @@ def main():
                           f"mean_R2={sub['r2'].mean():.3f} (n={len(sub)})")
 
     print("\n" + "=" * 85)
-    print("CROSS-ARCHITECTURE  —  PENDULUM  TRAINED vs RANDOM (null control)")
+    print("CROSS-ARCHITECTURE  —  CARTPOLE  TRAINED vs RANDOM (null control)")
     print("=" * 85)
     rows = {}
     for arch, df in arch_dfs.items():
-        pend = df[df["env"] == "pendulum"].copy()
+        pend = df[df["env"] == "cartpole"].copy()
         pend["measured_coupling"] = pd.to_numeric(pend["measured_coupling"], errors="coerce")
         pend["r2"] = pd.to_numeric(pend["r2"], errors="coerce")
         has_type = "model_type" in pend.columns
@@ -111,7 +105,7 @@ def main():
                 rows[f"{arch}/{mtype}"] = {
                     "slope": np.nan, "r": np.nan, "mean_fit_r2": np.nan,
                     "n_valid": n_valid, "n_total": n_total,
-                    "note": "no coherent g/l (null)" if mtype == "random" else "insufficient"}
+                    "note": "no coherent translational coupling (null)" if mtype == "random" else "insufficient"}
                 continue
             slope, _, r = fit_line(good["true_coupling"].values, good["measured_coupling"].values)
             rows[f"{arch}/{mtype}"] = {
