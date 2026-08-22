@@ -69,7 +69,7 @@ def estimate_effective_gl(checker, states, actions, dt, env_name=""):
     if is_cartpole:
         cos2_th = np.cos(theta_u)**2
         denom = (4/3 - (0.091)*cos2_th)
-        sin_th = sin_th/denom
+        sin_th = 2.0* sin_th/denom # cartpole half length
     regressor = (sin_th if is_cartpole else -sin_th)
 
  

@@ -6,7 +6,7 @@ from scipy.stats import pearsonr
 
 TAG_ORDER = ["in_training", "interpolated", "extrapolated"]
 RECURRENT = {"gru", "rssm"}
-CARTPOLE_INERTIA = 1.555
+CARTPOLE_INERTIA = 2.0
 
 
 def parse_seed(checkpoint):
