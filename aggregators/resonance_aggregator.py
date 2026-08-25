@@ -74,7 +74,16 @@ def main():
     if not arch_dfs:
         print("No resonance data found."); return
     pd.set_option("display.width", 200)
-
+    d = arch_dfs["mlp"]
+    cols = ["checkpoint","k","seed","eval_g","eval_l","meas_gl","meas_b","meas_A","swing"]
+    sel = d[(d["model_type"]=="trained") & (d["eval_g"]==9.8) & (d["eval_l"]==2.0) & (d["seed"]==0)]
+    print(sel[cols].sort_values("k").to_string(index=False))
+    # for arch, df in arch_dfs.items():
+    #     fk = df["checkpoint"].str.extract(r"_k(\d+)_")[0].astype(float)
+    #     bad = (df["k"] != fk).sum()
+    #     print(f"{arch}: k-column vs filename-k mismatches = {bad} / {len(df)};  "
+    #         f"k unique = {sorted(df['k'].dropna().unique())};  "
+    #         f"filename-k unique = {sorted(fk.dropna().unique())}")
     print("\n" + "=" * 92)
     print("JOINT ONE-STEP READOUT — g/l, b, A recovery (mean±SD across seeds)")
     print("=" * 92)
@@ -91,26 +100,30 @@ def main():
                     ksub = sub[(sub["k"] == k_val) & (sub["onestep_r2"] >= args.min_r2)]
                     if len(ksub) == 0:
                         continue
-                    slopes, rs = per_seed(ksub, "true_gl", "meas_gl")
-                    b_by_seed = ksub.groupby("seed")["meas_b"].mean()
-                    A_by_seed = ksub.groupby("seed")["meas_A"].mean()
-                    r2m = ksub["onestep_r2"].mean()
-                    rsub = rd[(rd["env"] == env) & (rd["policy"] == policy)
-                            & (rd["k"] == k_val) & (rd["onestep_r2"] >= args.min_r2)]
-                    rslopes, _ = per_seed(rsub, "true_gl", "meas_gl")
-                    if len(slopes) >= 3:
-                        print(f"    k={k_val:2d}: g/l slope = {slopes.mean():.3f} ± {slopes.std():.3f}  "
-                            f"r={rs.mean():.3f}  b={b_by_seed.mean():.3f}±{b_by_seed.std():.3f}  "
-                            f"A={A_by_seed.mean():.3f}  (n_seeds={len(slopes)}, R2={r2m:.3f}, "
-                            f"rand_slope={rslopes.mean() if len(rslopes) else float('nan'):.3f})")
-                    else:
-                        s, r = fit_slope(ksub["true_gl"].values, ksub["meas_gl"].values)
-                        print(f"    k={k_val:2d}: g/l slope={s:.3f} (pooled, n_seeds<3) r={r:.3f}")
-                        print(f"    b   = {b_by_seed.mean():.3f} ± {b_by_seed.std():.3f}   "
-                            f"A = {A_by_seed.mean():.3f} ± {A_by_seed.std():.3f}")
-                if len(rslopes) >= 1:
-                    print(f"    random-null g/l slope = {rslopes.mean():.3f} ± {rslopes.std():.3f} "
-                          f"(should be ~0)")
+                    for tag in ["in_range", "held_out"]:
+                        tsub = ksub[ksub["config_tag"] == tag]
+                        if len(tsub) == 0:
+                            continue
+                        slopes, rs = per_seed(tsub, "true_gl", "meas_gl")
+                        b_by_seed = ksub.groupby("seed")["meas_b"].mean()
+                        A_by_seed = ksub.groupby("seed")["meas_A"].mean()
+                        r2m = ksub["onestep_r2"].mean()
+                        rsub = rd[(rd["env"] == env) & (rd["policy"] == policy)
+                                & (rd["k"] == k_val) & (rd["onestep_r2"] >= args.min_r2)]
+                        rslopes, _ = per_seed(rsub, "true_gl", "meas_gl")
+                        if len(slopes) >= 3:
+                            print(f"  tag={tag}  k={k_val:2d}: g/l slope = {slopes.mean():.3f} ± {slopes.std():.3f}  "
+                                f"r={rs.mean():.3f}  b={b_by_seed.mean():.3f}±{b_by_seed.std():.3f}  "
+                                f"A={A_by_seed.mean():.3f}  (n_seeds={len(slopes)}, R2={r2m:.3f}, "
+                                f"rand_slope={rslopes.mean() if len(rslopes) else float('nan'):.3f})")
+                        else:
+                            s, r = fit_slope(ksub["true_gl"].values, ksub["meas_gl"].values)
+                            print(f" tag={tag}   k={k_val:2d}: g/l slope={s:.3f} (pooled, n_seeds<3) r={r:.3f}")
+                            print(f"    b   = {b_by_seed.mean():.3f} ± {b_by_seed.std():.3f}   "
+                                f"A = {A_by_seed.mean():.3f} ± {A_by_seed.std():.3f}")
+                    if len(rslopes) >= 1:
+                        print(f"    random-null g/l slope = {rslopes.mean():.3f} ± {rslopes.std():.3f} "
+                            f"(should be ~0)")
 
     print("\n" + "=" * 92)
     print("RESONANCE READOUT — does w_steep track √(g/l)?  (expect: NO)")
@@ -146,6 +159,34 @@ def main():
                 print(f"    swing: trained={tr_swing.mean():.1f}°±{tr_swing.std():.1f}  "
                       f"random={rd_swing.mean():.1f}°  "
                       f"(gap = learned frequency structure)")
+    print("\n" + "=" * 92)
+    print("DAMPING IDENTIFIABILITY — does meas_b approach true b as excitation rises?")
+    print("  true b = 0.5;  corr(swing, |b_err|) < 0  =>  b recovers where damping term is better excited")
+    print("=" * 92)
+    TRUE_B = 0.5
+    for arch, df in arch_dfs.items():
+        for env in sorted(df["env"].unique()):
+            for policy in ["noise", "sparse"]:
+                base = df[(df["env"] == env) & (df["policy"] == policy)
+                          & (df["model_type"] == "trained")
+                          & (df["swing"] <= WRAP_SWING)
+                          & (df["onestep_r2"] >= args.min_r2)].copy()
+                if len(base) < 3:
+                    continue
+                base["b_err"] = (base["meas_b"] - TRUE_B).abs()
+                c_err   = base["swing"].corr(base["b_err"])
+                c_meas  = base["swing"].corr(base["meas_b"])
+                print(f"\n  {arch.upper()} / {env} / {policy}:  "
+                      f"corr(swing,|b_err|)={c_err:+.3f}  corr(swing,meas_b)={c_meas:+.3f}  "
+                      f"mean|b_err|={base['b_err'].mean():.3f}  n={len(base)}")
+                for k_val in sorted(base["k"].unique()):
+                    kb = base[base["k"] == k_val]
+                    if len(kb) < 3:
+                        continue
+                    ck = kb["swing"].corr(kb["b_err"])
+                    print(f"    k={k_val:2d}: mean meas_b={kb['meas_b'].mean():+.3f}±{kb['meas_b'].std():.3f}  "
+                          f"mean|b_err|={kb['b_err'].mean():.3f}  corr(swing,|b_err|)={ck:+.3f}  "
+                          f"swing range=[{kb['swing'].min():.0f},{kb['swing'].max():.0f}]°  n={len(kb)}")
 
 
 if __name__ == "__main__":

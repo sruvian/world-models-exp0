@@ -83,8 +83,10 @@ def main():
                                 f"(n_seeds={len(gain_by_seed)})")
                         print("      OBSERVABLES (positive control — absolute MI high):")
                         for tgt, g in ctrls.groupby("target"):
+                            gain_by_seed = g.groupby("seed")["gain"].mean()
                             tmi = g.groupby("seed")["trained_mi"].mean()
                             print(f"        {tgt:16s}: trained_MI={tmi.mean():.3f} ± {tmi.std():.3f} "
+                                  f"gain={gain_by_seed.mean():+.4f} ± {gain_by_seed.std():.4f} "
                                 f"(n_seeds={len(tmi)})")
                         if len(params) and len(ctrls):
                             pgain = params["gain"].mean()

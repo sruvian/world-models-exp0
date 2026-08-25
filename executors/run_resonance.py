@@ -148,7 +148,7 @@ def estimate_effective_params_driven(model, states, actions, dt, device="cpu"):
     theta = torch.atan2(pred[:, :, 1], pred[:, :, 0])
     theta_u = np.unwrap(theta.cpu().numpy(), axis=1)
     thetadot = pred[:, :, 2].cpu().numpy()
-    theta_ddot = np.gradient(thetadot, dt, axis=1, edge_order=1)
+    theta_ddot = np.gradient(thetadot, dt, axis=1, edge_order=2)
 
     sin_th   = np.sin(theta_u)
     drive_cos = states[:, :T-1, 3].cpu().numpy()
