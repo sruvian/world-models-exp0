@@ -81,7 +81,7 @@ def main():
         print("\n" + "=" * 90)
         print(f"{arch.upper()}  —  effective g/l tracking (slope mean±SD across seeds)")
         print("=" * 90)
-        for env in ["pendulum", "cartpole"]:
+        for env in [ "cartpole"]:
             for policy in ["noise", "sparse"]:
                 envdf = df[(df["env"] == env) & (df["policy"] == policy)
                            & (df["model_type"] == "trained")].copy()
